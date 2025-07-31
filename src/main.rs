@@ -5,12 +5,12 @@ use crate::errors::PortfolioError;
 use crate::exchange::Exchange;
 use crate::exchange::SentimentProvider;
 use crate::exchange::{
-    create_exchange, create_sentiment_provider, CoinGeckoExchange, LunarCrushProvider,
+    create_exchange, create_sentiment_provider,
 };
 use crate::logger::{init_logger, log_action};
 use crate::market::{display_market_screen, MarketProvider};
 use crate::notification::Notifier;
-use crate::portfolio::{Holding, Portfolio};
+use crate::portfolio::Portfolio;
 use dotenv::dotenv;
 use std::collections::HashMap;
 use std::process::Command;

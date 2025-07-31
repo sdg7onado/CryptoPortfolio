@@ -96,7 +96,7 @@ impl Database {
             .get_async_connection()
             .await
             .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
-        conn.set_ex(&format!("price:{}", symbol), price, 300) // Cache for 5 minutes
+        conn.set_ex::<_, _, ()>(&format!("price:{}", symbol), price, 300) // Cache for 5 minutes
             .await
             .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
         Ok(())
@@ -129,7 +129,7 @@ impl Database {
         let ttl_usize: usize = ttl.try_into().map_err(|_| {
             PortfolioError::DatabaseError(format!("TTL value {} too large for usize", ttl))
         })?;
-        conn.set_ex(format!("sentiment:{}", symbol), sentiment, ttl_usize)
+        conn.set_ex::<_, _, ()>(format!("sentiment:{}", symbol), sentiment, ttl_usize)
             .await
             .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
         Ok(())

@@ -1,6 +1,6 @@
 use crate::database::Database;
 use crate::errors::PortfolioError;
-use crate::portfolio::{Holding, Portfolio};
+use crate::portfolio::Portfolio;
 use comfy_table::{Cell, Color, Table};
 use std::collections::HashMap;
 
