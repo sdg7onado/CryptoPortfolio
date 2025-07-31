@@ -123,6 +123,7 @@ graph TD
 
 - **Configure Environment**:
     - Create `.env` in the project root (do not commit):
+
         ```
         SENTIMENT_API_KEY=your_lunarcrush_key
         TWILIO_ACCOUNT_SID=your_twilio_sid
@@ -139,6 +140,7 @@ graph TD
 
 - **Configure Application**:
     - Update `config.toml`:
+    
         ```
         environment = "dev"
 
