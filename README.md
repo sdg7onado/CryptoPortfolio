@@ -88,7 +88,7 @@ graph TD
     - Twilio (for SMS notifications)
     - SendGrid (for email notifications)
 
-## 🛠️Installation
+## 🛠️ Installation
 - **Clone the Repository**:
     ```
     git clone https://github.com/sdg7onado/crypto-portfolio-manager.git
@@ -206,18 +206,22 @@ graph TD
     - Optimized performance with signed logs.
     - Longer update intervals (`market.refresh_secs = 300`).
 
-Provide Daily Updates:Submit price and sentiment data for PHA, SUI, DUSK (e.g., via CoinGecko, LunarCrush).
-Example:PHA: $0.22, sentiment 0.75
-SUI: $3.10, sentiment 0.60
-DUSK: $0.24, sentiment 0.25
+ - **Provide Daily Updates**:
+    - Submit price and sentiment data for PHA, SUI, DUSK (e.g., via CoinGecko, LunarCrush).
+    - Example:
+        - PHA: $0.22, sentiment 0.75
+        - SUI: $3.10, sentiment 0.60
+        - DUSK: $0.24, sentiment 0.25
 
-Market data: Top 100 coins by market cap or 24h change.
+    - Market data: Top 100 coins by market cap or 24h change.
 
-Monitor Notifications:SMS: Short alerts (75–115 characters) for significant actions, portfolio changes, or sentiment shifts.
-Email: Detailed HTML reports with timestamps and metrics.
+- **Monitor Notifications**:
+    - SMS: Short alerts (75–115 characters) for significant actions, portfolio changes, or sentiment shifts.
+    - Email: Detailed HTML reports with timestamps and metrics.
 
- Example OutputPortfolio Status Screen
-
+ ## 📊 Example Output
+ ### Portfolio Status Screen
+```
 === Portfolio Status ===
 +----------------+----------+----------------+------------+---------------+-----------+
 | Symbol         | Quantity | Purchase Price | Stop-Loss  | Current Value | Sentiment |
@@ -228,9 +232,10 @@ Email: Detailed HTML reports with timestamps and metrics.
 | Cash           | $0.00    |                |            |               |           |
 | Total          |          |                |            | $100.00       |           |
 +----------------+----------+----------------+------------+---------------+-----------+
+```
 
-Sentiment Analysis Dashboard
-
+### Sentiment Analysis Dashboard
+```
 === Sentiment Analysis Dashboard ===
 Timestamp: 2025-07-31T13:36:00Z
 +----------------+--------------------+--------------+-----------+-----------------+
@@ -240,9 +245,10 @@ Timestamp: 2025-07-31T13:36:00Z
 | sui            | 0.60               | API Fetch    | N/A       | Monitor         |
 | dusk-network   | 0.25               | Redis Cache  | 3200s     | Sell            |
 +----------------+--------------------+--------------+-----------+-----------------+
+```
 
-Live Market Updates
-
+### Live Market Updates
+```
 === Live Market Updates ===
 Timestamp: 2025-07-31T13:36:00Z
 +----------------+--------------+-----------------+------------------+
@@ -256,31 +262,37 @@ Timestamp: 2025-07-31T13:36:00Z
 | solana         | $180.00      | $80000000000    | +5.00%           |
 | ...            | ...          | ...             | ...              |
 +----------------+--------------+-----------------+------------------+
+```
 
-NotificationsSMS (Stop-Loss):
-
+### 🔔 Notifications
+- **SMS (Stop-Loss)**:
+```
 Portfolio Action: dusk-network: Negative sentiment triggered at $0.24 (sentiment: 0.25), sold 80 tokens for $19.20. 2025-07-31T13:36:00Z
+```
 
-Email (Portfolio Value Change):html
-
+- **Email (Portfolio Value Change)**:
+```
 <h2>Portfolio Value Change Alert</h2>
 <p><strong>Change:</strong> 12.50%</p>
 <p><strong>Previous:</strong> $100.00</p>
 <p><strong>Current:</strong> $112.50</p>
 <p><strong>Timestamp:</strong> 2025-07-31T13:36:00Z</p>
+```
+ ## 🛡️ Security
+ - **API Keys**: Stored in `.env`, never committed to version control.
+- **Logging**: HMAC-SHA256 signed logs in production (`portfolio_log.txt`) for integrity.
+- **Network**: HTTPS for all API calls (CoinGecko, LunarCrush, Twilio, SendGrid).
+- **Input Validation**: Robust error handling for API responses and database queries.
+- **Notification Throttling**: Cached in Redis to prevent duplicate alerts within 1 hour.
 
- SecurityAPI Keys: Stored in .env, never committed to version control.
-Logging: HMAC-SHA256 signed logs in production (portfolio_log.txt) for integrity.
-Network: HTTPS for all API calls (CoinGecko, LunarCrush, Twilio, SendGrid).
-Input Validation: Robust error handling for API responses and database queries.
-Notification Throttling: Cached in Redis to prevent duplicate alerts within 1 hour.
+## ⚡ Performance
+- **Caching**: Redis stores prices and sentiment (5-min and 1-hour TTL, respectively).
+- **Async Operations**: tokio for non-blocking I/O in API calls and database queries.
+- **Lightweight**: Optimized with `opt-level = 3`, `lto = "thin"`, and minimal dependencies.
+- **Local Execution**: Runs on localhost, minimizing latency and resource usage.
 
- PerformanceCaching: Redis stores prices and sentiment (5-min and 1-hour TTL, respectively).
-Async Operations: tokio for non-blocking I/O in API calls and database queries.
-Lightweight: Optimized with opt-level = 3, lto = "thin", and minimal dependencies.
-Local Execution: Runs on localhost, minimizing latency and resource usage.
-
- Workflowmermaid
+## 📈 Workflow
+```mermaid
 
 sequenceDiagram
     participant User
@@ -312,16 +324,27 @@ sequenceDiagram
         App->>APIs: Fetch market data
         App->>User: Update market screen
     end
+```
 
- ContributingContributions are welcome! Please follow these steps:Fork the repository.
-Create a feature branch (git checkout -b feature/your-feature).
-Commit changes (git commit -m "Add your feature").
-Push to the branch (git push origin feature/your-feature).
-Open a pull request.
+## 🤝 Contributing
+Contributions are welcome! Please follow these steps:
 
- LicenseThis project is licensed under the MIT License. See the LICENSE file for details. ContactFor questions or feedback, open an issue on GitHub or contact the maintainer at your.email@example.com (mailto:your.email@example.com). RoadmapAdd support for additional exchanges (Binance, Kraken).
-Implement advanced sentiment analysis with local NLP (e.g., TextBlob).
-Support WebSocket APIs for real-time market updates.
-Add graphical dashboard option using ratatui.
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/your-feature`).
+3. Commit changes (`git commit -m "Add your feature"`).
+4. Push to the branch (`git push origin feature/your-feature`).
+5. Open a pull request.
+
+## 📜 License
+ This project is licensed under the MIT License. See the LICENSE file for details. 
+ 
+ ## 📬 Contact
+ For questions or feedback, open an issue on GitHub or contact the maintainer at your.agufuobi@hotmail.com (mailto:okechukwu.agufuobi@hotmail.com).
+ 
+ ## 🎯 Roadmap
+ - Add support for additional exchanges (Binance, Kraken).
+- Implement advanced sentiment analysis with local NLP (e.g., TextBlob).
+- Support WebSocket APIs for real-time market updates.
+- Add graphical dashboard option using `ratatui`.
 
 
