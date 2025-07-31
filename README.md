@@ -6,7 +6,11 @@
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)
 
-A production-grade Rust application for managing a $100 micro-cap cryptocurrency portfolio (Phala Network, Sui, Dusk Network) with a focus on maximizing returns by January 30, 2026. Built with a "10x engineer" mindset, it features three console-based screens for real-time portfolio monitoring, sentiment analysis, and live market updates, complemented by SMS and email notifications for critical events. The application is secure, optimized, and runs locally using Redis for caching and PostgreSQL for persistent storage, with an exchange-agnostic design supporting multiple APIs (e.g., CoinGecko, LunarCrush).
+A production-grade Rust application for managing a $100 micro-cap cryptocurrency portfolio (Phala Network, Sui, Dusk Network) with a focus on maximizing returns by January 30, 2026. 
+
+Built with a "10x engineer" mindset, it features three console-based screens for real-time portfolio monitoring, sentiment analysis, and live market updates, complemented by SMS and email notifications for critical events. 
+
+The application is secure, optimized, and runs locally using Redis for caching and PostgreSQL for persistent storage, with an exchange-agnostic design supporting multiple APIs (e.g., CoinGecko, LunarCrush).
 
 ---
 
