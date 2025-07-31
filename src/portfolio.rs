@@ -1,10 +1,14 @@
-use crate::exchange::{Exchange, SentimentProvider};
+use crate::config::PortfolioConfig;
 use crate::database::Database;
 use crate::errors::PortfolioError;
-use async_trait::async_trait;
+use crate::exchange::Exchange;
+use crate::exchange::SentimentProvider;
+use crate::exchange::{CoinGeckoExchange, LunarCrushProvider};
+use crate::logger::log_action;
+use crate::notification::Notifier;
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Holding {
     pub symbol: String,
     pub quantity: f64,
@@ -12,116 +16,152 @@ pub struct Holding {
     pub stop_loss: f64,
 }
 
+#[derive(Debug)]
 pub struct Portfolio {
     pub holdings: Vec<Holding>,
     pub cash: f64,
-    pub previous_value: f64, // New: Track previous portfolio value
-    pub previous_prices: HashMap<String, f64>, // New: Track previous prices
-    pub previous_sentiments: HashMap<String, f64>, // New: Track previous sentiments
-}
-
-#[async_trait]
-pub trait PortfolioManager {
-    async fn check_stop_loss(
-        &mut self,
-        exchange: &dyn Exchange,
-        sentiment_provider: &dyn SentimentProvider,
-        db: &Database,
-        sentiment_threshold: f64,
-    ) -> Result<Vec<String>, PortfolioError>;
-    async fn rebalance(
-        &mut self,
-        exchange: &dyn Exchange,
-        sentiment_provider: &dyn SentimentProvider,
-        db: &Database,
-        max_allocation: f64,
-        sentiment_threshold: f64,
-    ) -> Result<Vec<String>, PortfolioError>;
-    async fn get_value(&self, exchange: &dyn Exchange) -> Result<f64, PortfolioError>;
+    pub config: PortfolioConfig,
 }
 
 impl Portfolio {
-    pub fn new() -> Self {
+    pub fn new(config: PortfolioConfig) -> Self {
         Portfolio {
-            holdings: vec![],
+            holdings: vec![
+                Holding {
+                    symbol: "phala-network".to_string(),
+                    quantity: 250.0,
+                    purchase_price: 0.20,
+                    stop_loss: 0.16,
+                },
+                Holding {
+                    symbol: "sui".to_string(),
+                    quantity: 10.0,
+                    purchase_price: 3.00,
+                    stop_loss: 2.40,
+                },
+                Holding {
+                    symbol: "dusk-network".to_string(),
+                    quantity: 80.0,
+                    purchase_price: 0.25,
+                    stop_loss: 0.20,
+                },
+            ],
             cash: 0.0,
-            previous_value: 0.0,
-            previous_prices: HashMap::new(),
-            previous_sentiments: HashMap::new(),
+            config,
         }
     }
-}
 
-#[async_trait]
-impl PortfolioManager for Portfolio {
-    async fn check_stop_loss(
+    pub async fn check_portfolio(
         &mut self,
-        exchange: &dyn Exchange,
-        sentiment_provider: &dyn SentimentProvider,
+        exchange: &CoinGeckoExchange,
+        sentiment_provider: &LunarCrushProvider,
         db: &Database,
-        sentiment_threshold: f64,
-    ) -> Result<Vec<String>, PortfolioError> {
-        let mut actions = vec![];
-        let mut i = 0;
-        while i < self.holdings.len() {
-            let holding = &self.holdings[i];
+        notifier: &Notifier,
+        negative_threshold: f64, // Add parameter
+        previous_value: f64,
+        previous_prices: &HashMap<String, f64>,
+        previous_sentiments: &HashMap<String, f64>,
+    ) -> Result<f64, PortfolioError> {
+        let mut current_prices = HashMap::new();
+        let mut current_sentiments = HashMap::new();
+
+        let mut to_sell = Vec::new();
+        for holding in self.holdings.iter() {
             let current_price = exchange.fetch_price(&holding.symbol).await?;
             let sentiment = sentiment_provider.fetch_sentiment(&holding.symbol).await?;
-            if current_price <= holding.stop_loss || sentiment <= sentiment_threshold {
-                let sale_value = holding.quantity * current_price;
-                self.cash += sale_value;
-                actions.push(format!(
-                    "{}: {} triggered at ${:.2} (sentiment: {:.2}), sold {} tokens for ${:.2}",
-                    holding.symbol, if current_price <= holding.stop_loss { "Stop-loss" } else { "Negative sentiment" },
-                    current_price, sentiment, holding.quantity, sale_value
+            current_prices.insert(holding.symbol.clone(), current_price);
+            current_sentiments.insert(holding.symbol.clone(), sentiment);
+
+            // Check stop-loss
+            if current_price < holding.stop_loss || sentiment < negative_threshold {
+                to_sell.push((
+                    holding.symbol.clone(),
+                    holding.quantity,
+                    current_price,
+                    sentiment,
                 ));
-                self.holdings.remove(i);
-            } else {
-                i += 1;
             }
         }
-        Ok(actions)
-    }
 
-    async fn rebalance(
-        &mut self,
-        exchange: &dyn Exchange,
-        sentiment_provider: &dyn SentimentProvider,
-        db: &Database,
-        max_allocation: f64,
-        sentiment_threshold: f64,
-    ) -> Result<Vec<String>, PortfolioError> {
-        let mut actions = vec![];
+        for (symbol, quantity, current_price, sentiment) in to_sell {
+            let proceeds = self.sell_holding(&symbol, exchange, db, notifier).await?;
+            log_action(
+                "info",
+                &format!(
+                    "Sold {} {} at ${:.2} (sentiment: {:.2}) for ${:.2}",
+                    quantity, symbol, current_price, sentiment, proceeds
+                ),
+            );
+            notifier.notify_significant_action(&format!(
+                "{}: Negative sentiment triggered at ${:.2} (sentiment: {:.2}), sold {} tokens for ${:.2}.",
+                symbol, current_price, sentiment, quantity, proceeds
+            )).await?;
+        }
+
         let total_value = self.get_value(exchange).await?;
-        for holding in &self.holdings {
-            let current_price = exchange.fetch_price(&holding.symbol).await?;
-            let sentiment = sentiment_provider.fetch_sentiment(&holding.symbol).await?;
-            let holding_value = holding.quantity * current_price;
-            let allocation = holding_value / total_value;
-            if allocation > max_allocation && sentiment < sentiment_threshold {
-                let excess_value = holding_value - (max_allocation * total_value);
-                let sell_quantity = excess_value / current_price;
-                let sale_value = sell_quantity * current_price;
-                self.cash += sale_value;
-                actions.push(format!(
-                    "{}: Rebalancing, sold {} tokens for ${:.2} (allocation: {:.2}%, sentiment: {:.2})",
-                    holding.symbol, sell_quantity, sale_value, allocation * 100.0, sentiment
-                ));
-                // Update holding quantity
-                if let Some(h) = self.holdings.iter_mut().find(|h| h.symbol == holding.symbol) {
-                    h.quantity -= sell_quantity;
-                }
+        notifier
+            .notify_major_change(
+                self,
+                previous_value,
+                total_value,
+                previous_prices,
+                &current_prices,
+            )
+            .await?;
+
+        for (symbol, sentiment) in &current_sentiments {
+            if let Some(prev_sentiment) = previous_sentiments.get(symbol) {
+                notifier
+                    .notify_sentiment_change(symbol, *prev_sentiment, *sentiment)
+                    .await?;
             }
         }
-        Ok(actions)
+
+        Ok(total_value)
     }
 
-    async fn get_value(&self, exchange: &dyn Exchange) -> Result<f64, PortfolioError> {
+    pub async fn get_value(&self, exchange: &CoinGeckoExchange) -> Result<f64, PortfolioError> {
         let mut total_value = self.cash;
         for holding in &self.holdings {
-            let price = exchange.fetch_price(&holding.symbol).await?;
-            total_value += holding.quantity * price;
+            let current_price = exchange.fetch_price(&holding.symbol).await?;
+            total_value += holding.quantity * current_price;
         }
         Ok(total_value)
+    }
+
+    pub async fn sell_holding(
+        &mut self,
+        symbol: &str,
+        exchange: &CoinGeckoExchange,
+        db: &Database,
+        notifier: &Notifier,
+    ) -> Result<f64, PortfolioError> {
+        if let Some(index) = self.holdings.iter().position(|h| h.symbol == symbol) {
+            let holding = self.holdings.remove(index);
+            let price = exchange.fetch_price(&holding.symbol).await?;
+            let proceeds = holding.quantity * price;
+            self.cash += proceeds;
+            db.log_trade(&holding.symbol, holding.quantity, price, "sell")
+                .await?;
+            log_action(
+                "info",
+                &format!(
+                    "Sold {} {} at ${:.2} for ${:.2}",
+                    holding.quantity, holding.symbol, price, proceeds
+                ),
+            );
+            notifier
+                .notify_significant_action(&format!(
+                    "Sold {} {} at ${:.2} for ${:.2}",
+                    holding.quantity, holding.symbol, price, proceeds
+                ))
+                .await?;
+            Ok(proceeds)
+        } else {
+            Err(PortfolioError::ExchangeError(format!(
+                "Holding {} not found",
+                symbol
+            )))
+        }
     }
 }

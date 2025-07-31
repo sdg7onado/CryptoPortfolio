@@ -1,17 +1,26 @@
-use log::{error, info, LevelFilter};
+use crate::errors::PortfolioError;
+use env_logger::Builder;
+use hex;
+use hmac::{Hmac, Mac};
+use log::{info, LevelFilter};
+use sha2::Sha256;
 use std::fs::OpenOptions;
 use std::io::Write;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 
-pub fn init_logger(env: &str) {
-    let level = if env == "dev" { LevelFilter::Debug } else { LevelFilter::Info };
-    env_logger::Builder::new()
+pub fn init_logger(env: &str) -> Result<(), PortfolioError> {
+    let level = if env == "dev" {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    };
+    Builder::new()
         .filter_level(level)
-        .init();
+        .try_init()
+        .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
+    Ok(())
 }
 
-pub fn log_action(action: &str, env: &str) {
+pub fn log_action(action: &str, env: &str) -> Result<(), PortfolioError> {
     let timestamp = chrono::Utc::now().to_rfc3339();
     let log = format!("[{}] {}\n", timestamp, action);
     info!("{}", action);
@@ -20,13 +29,17 @@ pub fn log_action(action: &str, env: &str) {
             .append(true)
             .create(true)
             .open("portfolio_log.txt")
-            .expect("Failed to open log file");
-        file.write_all(log.as_bytes()).expect("Failed to write to log");
-        // Optionally, sign logs for integrity (simplified example)
-        let mut mac = Hmac::<Sha256>::new_from_slice(b"secret_key").expect("HMAC error");
+            .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
+        file.write_all(log.as_bytes())
+            .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
+        // Optionally, sign logs for integrity
+        let mut mac = Hmac::<Sha256>::new_from_slice(b"secret_key")
+            .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
         mac.update(log.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
         let signed_log = format!("{} [Signature: {}]\n", log.trim(), signature);
-        file.write_all(signed_log.as_bytes()).expect("Failed to write signed log");
+        file.write_all(signed_log.as_bytes())
+            .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
     }
+    Ok(())
 }

@@ -1,123 +1,110 @@
-use dotenv::dotenv;
-use tokio::time::{sleep, Duration};
-use std::process::Command;
-use std::collections::HashMap;
 use crate::config::load_config;
-use crate::exchange::{create_exchange, create_sentiment_provider};
-use crate::market::{MarketProvider, display_market_screen};
-use crate::portfolio::{Portfolio, PortfolioManager};
 use crate::database::Database;
-use crate::logger::{init_logger, log_action};
 use crate::display::{display_portfolio, display_sentiment_screen};
-use crate::notification::Notifier;
 use crate::errors::PortfolioError;
+use crate::exchange::Exchange;
+use crate::exchange::SentimentProvider;
+use crate::exchange::{
+    create_exchange, create_sentiment_provider, CoinGeckoExchange, LunarCrushProvider,
+};
+use crate::logger::{init_logger, log_action};
+use crate::market::{display_market_screen, MarketProvider};
+use crate::notification::Notifier;
+use crate::portfolio::{Holding, Portfolio};
+use dotenv::dotenv;
+use std::collections::HashMap;
+use std::process::Command;
+use tokio::time::{sleep, Duration};
 
 mod config;
-mod exchange;
-mod portfolio;
 mod database;
-mod logger;
 mod display;
+mod errors;
+mod exchange;
+mod logger;
 mod market;
 mod notification;
-mod errors;
+mod portfolio;
 
 #[tokio::main]
 async fn portfolio_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
-    init_logger(&config.environment);
+    init_logger(&config.environment)?;
     let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
-    let exchange = create_exchange(&config.exchanges[0]);
-    let sentiment_provider = create_sentiment_provider(&config.sentiment.api_url, &config.sentiment.api_key);
+    let exchange = create_exchange(&config.exchanges[0]); // Returns CoinGeckoExchange
+    let sentiment_provider =
+        create_sentiment_provider(&config.sentiment.api_url, &config.sentiment.api_key); // Returns LunarCrushProvider
     let notifier = Notifier::new(config.notification.clone());
-    let mut portfolio = Portfolio {
-        holdings: vec![
-            portfolio::Holding {
-                symbol: "phala-network".to_string(),
-                quantity: 250.0,
-                purchase_price: 0.20,
-                stop_loss: 0.16,
-            },
-            portfolio::Holding {
-                symbol: "sui".to_string(),
-                quantity: 10.0,
-                purchase_price: 3.00,
-                stop_loss: 2.40,
-            },
-            portfolio::Holding {
-                symbol: "dusk-network".to_string(),
-                quantity: 80.0,
-                purchase_price: 0.25,
-                stop_loss: 0.20,
-            },
-        ],
-        cash: 0.0,
-        previous_value: 0.0,
-        previous_prices: HashMap::new(),
-        previous_sentiments: HashMap::new(),
-    };
+    let mut portfolio = Portfolio::new(config.portfolio.clone());
+    let mut previous_value = 0.0;
+    let mut previous_prices = HashMap::new();
+    let mut previous_sentiments = HashMap::new();
 
     loop {
         let mut sentiments = HashMap::new();
         let mut current_prices = HashMap::new();
         for holding in &portfolio.holdings {
             if let Some(cached_price) = db.get_cached_price(&holding.symbol).await? {
-                log_action(&format!("{}: Using cached price ${:.2}", holding.symbol, cached_price), &config.environment);
+                log_action(
+                    &format!(
+                        "{}: Using cached price ${:.2}",
+                        holding.symbol, cached_price
+                    ),
+                    &config.environment,
+                )?;
                 current_prices.insert(holding.symbol.clone(), cached_price);
             } else {
                 let price = exchange.fetch_price(&holding.symbol).await?;
                 db.cache_price(&holding.symbol, price).await?;
-                log_action(&format!("{}: Fetched price ${:.2}", holding.symbol, price), &config.environment);
+                log_action(
+                    &format!("{}: Fetched price ${:.2}", holding.symbol, price),
+                    &config.environment,
+                )?;
                 current_prices.insert(holding.symbol.clone(), price);
             }
             if let Some(cached_sentiment) = db.get_cached_sentiment(&holding.symbol).await? {
                 sentiments.insert(holding.symbol.clone(), cached_sentiment);
-                log_action(&format!("{}: Using cached sentiment {:.2}", holding.symbol, cached_sentiment), &config.environment);
+                log_action(
+                    &format!(
+                        "{}: Using cached sentiment {:.2}",
+                        holding.symbol, cached_sentiment
+                    ),
+                    &config.environment,
+                )?;
             } else {
                 let sentiment = sentiment_provider.fetch_sentiment(&holding.symbol).await?;
-                db.cache_sentiment(&holding.symbol, sentiment, config.sentiment.cache_ttl_secs).await?;
+                db.cache_sentiment(&holding.symbol, sentiment, config.sentiment.cache_ttl_secs)
+                    .await?;
                 sentiments.insert(holding.symbol.clone(), sentiment);
-                log_action(&format!("{}: Fetched sentiment {:.2}", holding.symbol, sentiment), &config.environment);
+                log_action(
+                    &format!("{}: Fetched sentiment {:.2}", holding.symbol, sentiment),
+                    &config.environment,
+                )?;
             }
         }
 
-        // Check for sentiment changes
-        for holding in &portfolio.holdings {
-            if let Some(prev_sentiment) = portfolio.previous_sentiments.get(&holding.symbol) {
-                if let Some(curr_sentiment) = sentiments.get(&holding.symbol) {
-                    notifier.notify_sentiment_change(&holding.symbol, *prev_sentiment, *curr_sentiment).await?;
-                }
-            }
-            portfolio.previous_sentiments.insert(holding.symbol.clone(), *sentiments.get(&holding.symbol).unwrap_or(&0.5));
-        }
+        let total_value = portfolio
+            .check_portfolio(
+                &exchange,
+                &sentiment_provider,
+                &db,
+                &notifier,
+                config.sentiment.negative_threshold,
+                previous_value,
+                &previous_prices,
+                &previous_sentiments,
+            )
+            .await?;
 
-        // Check stop-losses
-        let stop_loss_actions = portfolio.check_stop_loss(&*exchange, &*sentiment_provider, &db, config.sentiment.negative_threshold).await?;
-        for action in stop_loss_actions {
-            log_action(&action, &config.environment);
-            println!("{}", action);
-            notifier.notify_significant_action(&action).await?;
-        }
+        previous_value = total_value;
+        previous_prices = current_prices.clone();
+        previous_sentiments = sentiments.clone();
 
-        // Rebalance
-        let rebalance_actions = portfolio.rebalance(&*exchange, &*sentiment_provider, &db, config.portfolio.max_allocation, config.sentiment.positive_threshold).await?;
-        for action in rebalance_actions {
-            log_action(&action, &config.environment);
-            println!("{}", action);
-            notifier.notify_significant_action(&action).await?;
-        }
-
-        // Check portfolio value changes
-        let total_value = portfolio.get_value(&*exchange).await?;
-        if portfolio.previous_value > 0.0 {
-            notifier.notify_major_change(&portfolio, portfolio.previous_value, total_value, &portfolio.previous_prices, &current_prices).await?;
-        }
-        portfolio.previous_value = total_value;
-        portfolio.previous_prices = current_prices.clone();
-
-        // Display portfolio
         display_portfolio(&portfolio, total_value, &sentiments);
-        log_action(&format!("Portfolio value: ${:.2}", total_value), &config.environment);
+        log_action(
+            &format!("Portfolio value: ${:.2}", total_value),
+            &config.environment,
+        )?;
 
         sleep(Duration::from_secs(config.portfolio.check_interval_secs)).await;
     }
@@ -126,47 +113,33 @@ async fn portfolio_screen() -> Result<(), PortfolioError> {
 #[tokio::main]
 async fn sentiment_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
-    init_logger(&config.environment);
+    init_logger(&config.environment)?;
     let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
-    let sentiment_provider = create_sentiment_provider(&config.sentiment.api_url, &config.sentiment.api_key);
-    let portfolio = Portfolio {
-        holdings: vec![
-            portfolio::Holding {
-                symbol: "phala-network".to_string(),
-                quantity: 250.0,
-                purchase_price: 0.20,
-                stop_loss: 0.16,
-            },
-            portfolio::Holding {
-                symbol: "sui".to_string(),
-                quantity: 10.0,
-                purchase_price: 3.00,
-                stop_loss: 2.40,
-            },
-            portfolio::Holding {
-                symbol: "dusk-network".to_string(),
-                quantity: 80.0,
-                purchase_price: 0.25,
-                stop_loss: 0.20,
-            },
-        ],
-        cash: 0.0,
-        previous_value: 0.0,
-        previous_prices: HashMap::new(),
-        previous_sentiments: HashMap::new(),
-    };
+    let sentiment_provider =
+        create_sentiment_provider(&config.sentiment.api_url, &config.sentiment.api_key);
+    let portfolio = Portfolio::new(config.portfolio.clone());
 
     loop {
         let mut sentiments = HashMap::new();
         for holding in &portfolio.holdings {
             if let Some(cached_sentiment) = db.get_cached_sentiment(&holding.symbol).await? {
                 sentiments.insert(holding.symbol.clone(), cached_sentiment);
-                log_action(&format!("{}: Using cached sentiment {:.2}", holding.symbol, cached_sentiment), &config.environment);
+                log_action(
+                    &format!(
+                        "{}: Using cached sentiment {:.2}",
+                        holding.symbol, cached_sentiment
+                    ),
+                    &config.environment,
+                )?;
             } else {
                 let sentiment = sentiment_provider.fetch_sentiment(&holding.symbol).await?;
-                db.cache_sentiment(&holding.symbol, sentiment, config.sentiment.cache_ttl_secs).await?;
+                db.cache_sentiment(&holding.symbol, sentiment, config.sentiment.cache_ttl_secs)
+                    .await?;
                 sentiments.insert(holding.symbol.clone(), sentiment);
-                log_action(&format!("{}: Fetched sentiment {:.2}", holding.symbol, sentiment), &config.environment);
+                log_action(
+                    &format!("{}: Fetched sentiment {:.2}", holding.symbol, sentiment),
+                    &config.environment,
+                )?;
             }
         }
 
@@ -187,9 +160,10 @@ async fn sentiment_screen() -> Result<(), PortfolioError> {
 #[tokio::main]
 async fn market_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
-    init_logger(&config.environment);
+    init_logger(&config.environment)?;
     let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
-    let market_provider = MarketProvider::new(&config.exchanges[0].base_url, &config.exchanges[0].api_key);
+    let market_provider =
+        MarketProvider::new(&config.exchanges[0].base_url, &config.exchanges[0].api_key);
 
     loop {
         display_market_screen(
@@ -217,10 +191,13 @@ fn main() {
         }
     } else {
         let config = load_config().expect("Failed to load config");
-        init_logger(&config.environment);
+        init_logger(&config.environment).expect("Failed to initialize logger");
 
         let (terminal_cmd, terminal_args) = if cfg!(target_os = "windows") {
-            ("cmd", vec!["/C", "cargo", "run", "--"])
+            (
+                "cmd",
+                vec!["/C", "start", "cmd", "/K", "cargo", "run", "--"],
+            )
         } else {
             ("xterm", vec!["-e", "cargo", "run", "--"])
         };

@@ -1,8 +1,8 @@
+use crate::config::ExchangeConfig;
+use crate::errors::PortfolioError;
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
-use crate::config::ExchangeConfig;
-use crate::errors::PortfolioError;
 
 #[derive(Deserialize)]
 struct PriceResponse {
@@ -29,8 +29,12 @@ impl CoinGeckoExchange {
 
 impl Exchange for CoinGeckoExchange {
     async fn fetch_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
-        let url = format!("{}/simple/price?ids={}&vs_currencies=usd", self.base_url, symbol);
-        let resp = self.client
+        let url = format!(
+            "{}/simple/price?ids={}&vs_currencies=usd",
+            self.base_url, symbol
+        );
+        let resp = self
+            .client
             .get(&url)
             .header("User-Agent", "crypto_portfolio/0.1")
             .send()
@@ -50,9 +54,9 @@ impl Exchange for CoinGeckoExchange {
 }
 
 // Add more exchanges (e.g., Binance) by implementing the Exchange trait
-pub fn create_exchange(config: &ExchangeConfig) -> Box<dyn Exchange> {
+pub fn create_exchange(config: &ExchangeConfig) -> CoinGeckoExchange {
     match config.name.as_str() {
-        "coingecko" => Box::new(CoinGeckoExchange::new(config)),
+        "coingecko" => CoinGeckoExchange::new(config),
         _ => panic!("Unsupported exchange: {}", config.name),
     }
 }
@@ -84,8 +88,12 @@ struct SentimentResponse {
 
 impl SentimentProvider for LunarCrushProvider {
     async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError> {
-        let url = format!("{}/sentiment?symbol={}&key={}", self.base_url, symbol, self.api_key);
-        let resp = self.client
+        let url = format!(
+            "{}/sentiment?symbol={}&key={}",
+            self.base_url, symbol, self.api_key
+        );
+        let resp = self
+            .client
             .get(&url)
             .header("User-Agent", "crypto_portfolio/0.1")
             .send()
@@ -99,6 +107,6 @@ impl SentimentProvider for LunarCrushProvider {
     }
 }
 
-pub fn create_sentiment_provider(api_url: &str, api_key: &str) -> Box<dyn SentimentProvider> {
-    Box::new(LunarCrushProvider::new(api_url, api_key))
+pub fn create_sentiment_provider(api_url: &str, api_key: &str) -> LunarCrushProvider {
+    LunarCrushProvider::new(api_url, api_key)
 }

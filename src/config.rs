@@ -1,7 +1,8 @@
+use crate::errors::PortfolioError;
 use serde::Deserialize;
 use std::fs;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub environment: String, // "dev" or "prod"
     pub exchanges: Vec<ExchangeConfig>,
@@ -14,7 +15,7 @@ pub struct Config {
     pub notification: NotificationConfig,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct ExchangeConfig {
     pub name: String, // e.g., "coingecko", "binance"
     pub api_key: String,
@@ -22,24 +23,24 @@ pub struct ExchangeConfig {
     pub base_url: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct DatabaseConfig {
     pub postgres_url: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct RedisConfig {
     pub url: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct PortfolioConfig {
     pub check_interval_secs: u64,
     pub max_allocation: f64,       // e.g., 0.6 for 60%
     pub stop_loss_percentage: f64, // e.g., 0.2 for 20%
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize, Clone, Debug)]
 pub struct SentimentConfig {
     pub api_url: String,
     pub api_key: String,
@@ -48,20 +49,20 @@ pub struct SentimentConfig {
     pub negative_threshold: f64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct DisplayConfig {
     pub sentiment_refresh_secs: u64, // Refresh rate for sentiment screen
     pub use_colors: bool,            // Enable/disable color output
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct MarketConfig {
     pub refresh_secs: u64,
     pub sort_by: String,             // e.g., "market_cap" or "price_change_24h"
     pub pinned_symbols: Vec<String>, // e.g., ["phala-network", "sui", "dusk-network"]
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct NotificationConfig {
     pub sms_enabled: bool,
     pub email_enabled: bool,
@@ -75,15 +76,17 @@ pub struct NotificationConfig {
     pub notification_thresholds: NotificationThresholds,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct NotificationThresholds {
     pub portfolio_value_change_percent: f64,
     pub holding_value_change_percent: f64,
     pub sentiment_change: f64,
 }
 
-pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
-    let config_content = fs::read_to_string("config.toml")?;
-    let config: Config = toml::from_str(&config_content)?;
+pub fn load_config() -> Result<Config, PortfolioError> {
+    let config_str = fs::read_to_string("config.toml")
+        .map_err(|e| PortfolioError::ConfigError(e.to_string()))?;
+    let config: Config =
+        toml::from_str(&config_str).map_err(|e| PortfolioError::ConfigError(e.to_string()))?;
     Ok(config)
 }

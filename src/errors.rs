@@ -10,4 +10,6 @@ pub enum PortfolioError {
     DatabaseError(String),
     #[error("IO error: {0}")]
     IoError(String),
+    #[error("Notification error: {0}")]
+    NotificationError(String),
 }
