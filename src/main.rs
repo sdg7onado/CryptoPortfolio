@@ -23,37 +23,6 @@ mod notification;
 mod errors;
 
 #[tokio::main]
-async fn main() -> Result<(), PortfolioError> {
-    dotenv().ok();
-    let config = load_config()?;
-    init_logger(&config.environment);
-
-    let (terminal_cmd, terminal_args) = if cfg!(target_os = "windows") {
-        ("cmd", vec!["/C", "cargo", "run", "--"])
-    } else {
-        ("xterm", vec!["-e", "cargo", "run", "--"])
-    };
-
-    Command::new(terminal_cmd)
-        .args(&terminal_args)
-        .arg("portfolio")
-        .spawn()
-        .map_err(|e| PortfolioError::IoError(e.to_string()))?;
-    Command::new(terminal_cmd)
-        .args(&terminal_args)
-        .arg("sentiment")
-        .spawn()
-        .map_err(|e| PortfolioError::IoError(e.to_string()))?;
-    Command::new(terminal_cmd)
-        .args(&terminal_args)
-        .arg("market")
-        .spawn()
-        .map_err(|e| PortfolioError::IoError(e.to_string()))?;
-
-    Ok(())
-}
-
-#[tokio::main]
 async fn portfolio_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
     init_logger(&config.environment);
@@ -237,6 +206,7 @@ async fn market_screen() -> Result<(), PortfolioError> {
 }
 
 fn main() {
+    dotenv().ok();
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         match args[1].as_str() {
@@ -246,6 +216,39 @@ fn main() {
             _ => eprintln!("Invalid subcommand. Use 'portfolio', 'sentiment', or 'market'."),
         }
     } else {
-        main().expect("Main process failed");
+        let config = load_config().expect("Failed to load config");
+        init_logger(&config.environment);
+
+        let (terminal_cmd, terminal_args) = if cfg!(target_os = "windows") {
+            ("cmd", vec!["/C", "cargo", "run", "--"])
+        } else {
+            ("xterm", vec!["-e", "cargo", "run", "--"])
+        };
+
+        // Spawn console windows for each screen
+        if let Err(e) = Command::new(terminal_cmd)
+            .args(&terminal_args)
+            .arg("portfolio")
+            .spawn()
+        {
+            eprintln!("Failed to spawn portfolio screen: {}", e);
+        }
+        if let Err(e) = Command::new(terminal_cmd)
+            .args(&terminal_args)
+            .arg("sentiment")
+            .spawn()
+        {
+            eprintln!("Failed to spawn sentiment screen: {}", e);
+        }
+        if let Err(e) = Command::new(terminal_cmd)
+            .args(&terminal_args)
+            .arg("market")
+            .spawn()
+        {
+            eprintln!("Failed to spawn market screen: {}", e);
+        }
+
+        // Keep the main process alive to allow child processes to run
+        std::thread::sleep(std::time::Duration::from_secs(3600));
     }
 }
