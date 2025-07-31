@@ -56,3 +56,49 @@ pub fn create_exchange(config: &ExchangeConfig) -> Box<dyn Exchange> {
         _ => panic!("Unsupported exchange: {}", config.name),
     }
 }
+
+pub trait SentimentProvider {
+    async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError>;
+}
+
+pub struct LunarCrushProvider {
+    client: reqwest::Client,
+    base_url: String,
+    api_key: String,
+}
+
+impl LunarCrushProvider {
+    pub fn new(api_url: &str, api_key: &str) -> Self {
+        LunarCrushProvider {
+            client: reqwest::Client::new(),
+            base_url: api_url.to_string(),
+            api_key: api_key.to_string(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SentimentResponse {
+    sentiment: f64,
+}
+
+impl SentimentProvider for LunarCrushProvider {
+    async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError> {
+        let url = format!("{}/sentiment?symbol={}&key={}", self.base_url, symbol, self.api_key);
+        let resp = self.client
+            .get(&url)
+            .header("User-Agent", "crypto_portfolio/0.1")
+            .send()
+            .await
+            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
+        let data: SentimentResponse = resp
+            .json()
+            .await
+            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
+        Ok(data.sentiment)
+    }
+}
+
+pub fn create_sentiment_provider(api_url: &str, api_key: &str) -> Box<dyn SentimentProvider> {
+    Box::new(LunarCrushProvider::new(api_url, api_key))
+}

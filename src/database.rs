@@ -77,4 +77,27 @@ impl Database {
         .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
         Ok(())
     }
+    
+    pub async fn cache_sentiment(&self, symbol: &str, sentiment: f64, ttl: u64) -> Result<(), PortfolioError> {
+        let mut conn = self.redis_client
+            .get_async_connection()
+            .await
+            .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
+        conn.set_ex(&format!("sentiment:{}", symbol), sentiment, ttl)
+            .await
+            .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn get_cached_sentiment(&self, symbol: &str) -> Result<Option<f64>, PortfolioError> {
+        let mut conn = self.redis_client
+            .get_async_connection()
+            .await
+            .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
+        let sentiment: Option<f64> = conn
+            .get(&format!("sentiment:{}", symbol))
+            .await
+            .map_err(|e| PortfolioError::DatabaseError(e.to_string()))?;
+        Ok(sentiment)
+    }
 }
