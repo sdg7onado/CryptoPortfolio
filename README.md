@@ -343,7 +343,7 @@ Contributions are welcome! Please follow these steps:
  This project is licensed under the MIT License. See the LICENSE file for details. 
  
  ## 📬 Contact
- For questions or feedback, open an issue on GitHub or contact the maintainer at your.agufuobi@hotmail.com (mailto:okechukwu.agufuobi@hotmail.com).
+ For questions or feedback, open an issue on GitHub or contact the maintainer at okechukwu.agufuobi@hotmail.com (mailto:okechukwu.agufuobi@hotmail.com).
  
  ## 🎯 Roadmap
  - Add support for additional exchanges (Binance, Kraken).
