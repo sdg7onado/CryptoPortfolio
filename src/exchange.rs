@@ -89,7 +89,7 @@ struct SentimentResponse {
 impl SentimentProvider for LunarCrushProvider {
     async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError> {
         let url = format!(
-            "{}/sentiment?symbol={}&key={}",
+            "{}/topic/{}/sentiment?key={}",
             self.base_url, symbol, self.api_key
         );
         let resp = self
