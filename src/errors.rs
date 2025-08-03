@@ -12,4 +12,6 @@ pub enum PortfolioError {
     IoError(String),
     #[error("Notification error: {0}")]
     NotificationError(String),
+    #[error("ApiE error: {0}")]
+    ApiError(String),
 }

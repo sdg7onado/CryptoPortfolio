@@ -1,5 +1,6 @@
 use crate::database::Database;
 use crate::errors::PortfolioError;
+use crate::exchange::{DetailedSentiment, SentimentProvider};
 use crate::portfolio::Portfolio;
 use comfy_table::{Cell, Color, Table};
 use std::collections::HashMap;
@@ -53,6 +54,7 @@ pub async fn display_sentiment_screen(
     portfolio: &Portfolio,
     sentiments: &HashMap<String, f64>,
     db: &Database,
+    sentiment_provider: &impl SentimentProvider,
     positive_threshold: f64,
     negative_threshold: f64,
     use_colors: bool,
@@ -64,9 +66,15 @@ pub async fn display_sentiment_screen(
         "Data Source",
         "Cache TTL",
         "Recommendation",
+        "Daily Avg",
+        "1-Week",
+        "1-Month",
     ]);
     for holding in &portfolio.holdings {
         let sentiment = *sentiments.get(&holding.symbol).unwrap_or(&0.5);
+        let detailed = sentiment_provider
+            .fetch_detailed_sentiment(&holding.symbol)
+            .await?;
         let (source, ttl) =
             if let Some(cached_sentiment) = db.get_cached_sentiment(&holding.symbol).await? {
                 (
@@ -102,6 +110,17 @@ pub async fn display_sentiment_screen(
             Cell::new(source),
             Cell::new(format!("{}s", ttl)),
             recommendation_cell,
+            Cell::new(format!("{:.2}", detailed.daily_average)),
+            Cell::new(format!(
+                "{:.2} ({:.0}%)",
+                detailed.one_week_value,
+                detailed.one_week_change * 100.0
+            )),
+            Cell::new(format!(
+                "{:.2} ({:.0}%)",
+                detailed.one_month_value,
+                detailed.one_month_change * 100.0
+            )),
         ]);
     }
 
@@ -110,5 +129,76 @@ pub async fn display_sentiment_screen(
         chrono::Utc::now(),
         table
     );
+
+    // Detailed sentiment for each holding
+    for holding in &portfolio.holdings {
+        let detailed = sentiment_provider
+            .fetch_detailed_sentiment(&holding.symbol)
+            .await?;
+
+        // High/Low table
+        let mut high_low_table = Table::new();
+        high_low_table.set_header(vec!["1-Year High", "Date", "1-Year Low", "Date"]);
+        high_low_table.add_row(vec![
+            format!("{:.2}", detailed.one_year_high),
+            detailed.one_year_high_date,
+            format!("{:.2}", detailed.one_year_low),
+            detailed.one_year_low_date,
+        ]);
+        println!("\n{} High/Low:", holding.symbol);
+        println!("{}", high_low_table);
+
+        // Supportive Themes table
+        let mut supportive_table = Table::new();
+        supportive_table.set_header(vec!["Supportive Theme", "Weight", "Description"]);
+        for theme in detailed.supportive_themes {
+            supportive_table.add_row(vec![
+                theme.name,
+                format!("{:.0}%", theme.weight * 100.0),
+                theme.description,
+            ]);
+        }
+        println!("\n{} Supportive Themes:", holding.symbol);
+        println!("{}", supportive_table);
+
+        // Critical Themes table
+        let mut critical_table = Table::new();
+        critical_table.set_header(vec!["Critical Theme", "Weight", "Description"]);
+        for theme in detailed.critical_themes {
+            critical_table.add_row(vec![
+                theme.name,
+                format!("{:.0}%", theme.weight * 100.0),
+                theme.description,
+            ]);
+        }
+        println!("\n{} Critical Themes:", holding.symbol);
+        println!("{}", critical_table);
+
+        // Network Engagement table
+        let mut engagement_table = Table::new();
+        engagement_table.set_header(vec![
+            "Network",
+            "Positive",
+            "Positive %",
+            "Neutral",
+            "Neutral %",
+            "Negative",
+            "Negative %",
+        ]);
+        for (network, engagement) in detailed.network_engagement {
+            engagement_table.add_row(vec![
+                network,
+                engagement.positive.to_string(),
+                format!("{:.0}%", engagement.positive_percentage * 100.0),
+                engagement.neutral.to_string(),
+                format!("{:.0}%", engagement.neutral_percentage * 100.0),
+                engagement.negative.to_string(),
+                format!("{:.0}%", engagement.negative_percentage * 100.0),
+            ]);
+        }
+        println!("\n{} Network Engagement:", holding.symbol);
+        println!("{}", engagement_table);
+    }
+
     Ok(())
 }

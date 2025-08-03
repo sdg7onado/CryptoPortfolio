@@ -141,6 +141,7 @@ async fn sentiment_screen() -> Result<(), PortfolioError> {
             &portfolio,
             &sentiments,
             &db,
+            &sentiment_provider,
             config.sentiment.positive_threshold,
             config.sentiment.negative_threshold,
             config.display.use_colors,
