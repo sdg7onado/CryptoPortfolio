@@ -2,8 +2,9 @@ use crate::database::Database;
 use crate::errors::PortfolioError;
 use comfy_table::{Cell, Color, Table};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)] // From previous fix
+#[derive(Debug, Clone, Deserialize, Serialize)] // From previous fix
 pub struct MarketData {
     pub symbol: String,
     pub price: f64,
@@ -27,6 +28,63 @@ impl MarketProvider {
     }
 
     pub async fn fetch_market_data(
+        &self,
+        symbols: &[String],
+    ) -> Result<Vec<MarketData>, PortfolioError> {
+        // Mock CoinGecko API call for all coins (replace with real endpoint)
+        let url = format!(
+            "{}/coins/markets?vs_currency=usd&per_page=100&page=1&key={}",
+            self.api_url, self.api_key
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .header("User-Agent", "crypto_portfolio/0.1")
+            .send()
+            .await
+            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
+        let mut data: Vec<MarketData> = resp
+            .json()
+            .await
+            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
+
+        // Ensure pinned symbols (PHA, SUI, DUSK) are included
+        for symbol in symbols {
+            if !data.iter().any(|d| d.symbol == *symbol) {
+                let price = self.fetch_single_price(symbol).await?;
+                data.push(MarketData {
+                    symbol: symbol.clone(),
+                    price,
+                    market_cap: 0.0, // Placeholder; fetch real market cap if needed
+                    price_change_24h: 0.0,
+                });
+            }
+        }
+        Ok(data)
+    }
+
+    async fn fetch_single_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
+        let url = format!(
+            "{}/simple/price?ids={}&vs_currencies=usd&key={}",
+            self.api_url, symbol, self.api_key
+        );
+        let resp: serde_json::Value = self
+            .client
+            .get(&url)
+            .header("User-Agent", "crypto_portfolio/0.1")
+            .send()
+            .await
+            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?
+            .json()
+            .await
+            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
+        let price = resp[symbol]["usd"]
+            .as_f64()
+            .ok_or_else(|| PortfolioError::ExchangeError("Price not found".to_string()))?;
+        Ok(price)
+    }
+
+    pub async fn fetch_market_data_mock(
         &self,
         symbols: &[String],
     ) -> Result<Vec<MarketData>, PortfolioError> {

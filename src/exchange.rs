@@ -5,61 +5,228 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use std::collections::HashMap;
 
+pub trait Exchange {
+    async fn fetch_price(&self, symbol: &str) -> Result<f64, PortfolioError>;
+}
+
+#[derive(Debug, Clone)]
+pub struct DetailedSentiment {
+    pub current_value: f64,
+    pub daily_average: f64,
+    pub one_week_value: f64,
+    pub one_week_change: f64,
+    pub one_month_value: f64,
+    pub one_month_change: f64,
+    pub one_year_high: f64,
+    pub one_year_high_date: String,
+    pub one_year_low: f64,
+    pub one_year_low_date: String,
+    pub supportive_themes: Vec<Theme>,
+    pub critical_themes: Vec<Theme>,
+    pub network_engagement: HashMap<String, NetworkEngagement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Theme {
+    pub name: String,
+    pub weight: f64,
+    pub description: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NetworkEngagement {
+    pub positive: u64,
+    pub positive_percentage: f64,
+    pub neutral: u64,
+    pub neutral_percentage: f64,
+    pub negative: u64,
+    pub negative_percentage: f64,
+}
 #[derive(Deserialize)]
 struct PriceResponse {
     price: f64,
 }
 
-pub trait Exchange {
-    async fn fetch_price(&self, symbol: &str) -> Result<f64, PortfolioError>;
-}
-
 pub struct CoinGeckoExchange {
+    api_url: String,
+    api_key: String,
     client: Client,
-    base_url: String,
 }
 
 impl CoinGeckoExchange {
-    pub fn new(config: &ExchangeConfig) -> Self {
+    pub fn new(api_url: &str, api_key: &str) -> Self {
         CoinGeckoExchange {
+            api_url: api_url.to_string(),
+            api_key: api_key.to_string(),
             client: Client::new(),
-            base_url: config.base_url.clone(),
         }
     }
 }
 
 impl Exchange for CoinGeckoExchange {
     async fn fetch_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
+        // Map app symbols to CoinGecko IDs
+        let coingecko_id = match symbol.to_uppercase().as_str() {
+            "PHA" => "phala-network",
+            "SUI" => "sui",
+            "DUSK" => "dusk-network",
+            _ => {
+                return Err(PortfolioError::ApiError(format!(
+                    "Symbol {} not supported by CoinGecko",
+                    symbol
+                )))
+            }
+        };
+
         let url = format!(
-            "{}/simple/price?ids={}&vs_currencies=usd",
-            self.base_url, symbol
+            "{}/api/v3/simple/price?ids={}&vs_currencies=usd&x_cg_pro_api_key={}",
+            self.api_url, coingecko_id, self.api_key
         );
-        let resp = self
-            .client
-            .get(&url)
-            .header("User-Agent", "crypto_portfolio/0.1")
-            .send()
-            .await
-            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
-        let json: HashMap<String, HashMap<String, f64>> = resp
-            .json()
-            .await
-            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
-        let price = json
-            .get(symbol)
-            .and_then(|m| m.get("usd"))
-            .copied()
-            .ok_or_else(|| PortfolioError::ExchangeError("Price not found".to_string()))?;
+
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            PortfolioError::ApiError(format!("Failed to fetch price for {}: {}", symbol, e))
+        })?;
+
+        #[derive(Deserialize)]
+        struct CoinGeckoPrice {
+            usd: f64,
+        }
+
+        let price_data: HashMap<String, CoinGeckoPrice> = response.json().await.map_err(|e| {
+            PortfolioError::ApiError(format!(
+                "Failed to parse CoinGecko price JSON for {}: {}",
+                symbol, e
+            ))
+        })?;
+
+        let price = price_data
+            .get(coingecko_id)
+            .ok_or_else(|| {
+                PortfolioError::ApiError(format!(
+                    "Price not found for {} in CoinGecko response",
+                    symbol
+                ))
+            })?
+            .usd;
+
         Ok(price)
     }
 }
 
-// Add more exchanges (e.g., Binance) by implementing the Exchange trait
-pub fn create_exchange(config: &ExchangeConfig) -> CoinGeckoExchange {
-    match config.name.as_str() {
-        "coingecko" => CoinGeckoExchange::new(config),
-        _ => panic!("Unsupported exchange: {}", config.name),
+pub struct BinanceExchange {
+    client: Client,
+    api_key: String,
+    api_secret: String,
+    api_url: String,
+    symbol_map: HashMap<String, String>, // Maps app symbols (e.g., "PHA") to Binance symbols (e.g., "PHAUSDT")
+}
+
+impl BinanceExchange {
+    pub fn new(
+        api_url: &str,
+        api_key: &str,
+        api_secret: &str,
+        symbol_map: HashMap<String, String>,
+    ) -> Self {
+        BinanceExchange {
+            api_url: api_url.to_string(),
+            api_key: api_key.to_string(),
+            api_secret: api_secret.to_string(),
+            client: Client::new(),
+            symbol_map,
+        }
     }
+}
+
+impl Exchange for BinanceExchange {
+    async fn fetch_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
+        let binance_symbol = self.symbol_map.get(symbol).ok_or_else(|| {
+            PortfolioError::ApiError(format!("Symbol {} not supported by Binance", symbol))
+        })?;
+
+        let url = format!(
+            "{}/api/v3/ticker/price?symbol={}",
+            self.api_url, binance_symbol
+        );
+        let response = self
+            .client
+            .get(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| {
+                PortfolioError::ApiError(format!("Failed to fetch price for {}: {}", symbol, e))
+            })?;
+
+        #[derive(Deserialize)]
+        struct BinancePrice {
+            price: String,
+        }
+
+        let price_data: BinancePrice = response.json().await.map_err(|e| {
+            PortfolioError::ApiError(format!(
+                "Failed to parse Binance price JSON for {}: {}",
+                symbol, e
+            ))
+        })?;
+
+        let price = price_data.price.parse::<f64>().map_err(|e| {
+            PortfolioError::ApiError(format!("Failed to parse price for {}: {}", symbol, e))
+        })?;
+
+        Ok(price)
+    }
+}
+
+// Enum to wrap exchange implementations
+#[derive(Debug)]
+pub enum ExchangeImpl {
+    CoinGecko(CoinGeckoExchange),
+    Binance(BinanceExchange),
+}
+
+impl Exchange for ExchangeImpl {
+    async fn fetch_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
+        match self {
+            ExchangeImpl::CoinGecko(exchange) => exchange.fetch_price(symbol).await,
+            ExchangeImpl::Binance(exchange) => exchange.fetch_price(symbol).await,
+        }
+    }
+}
+
+// Create multiple exchanges
+pub fn create_exchange(config: &[crate::config::ExchangeConfig]) -> Vec<Box<dyn Exchange>> {
+    let mut exchanges: Vec<Box<dyn Exchange>> = Vec::new();
+
+    for exchange_config in config {
+        match exchange_config.name.to_lowercase().as_str() {
+            "coingecko" => {
+                exchanges.push(Box::new(CoinGeckoExchange::new(
+                    &exchange_config.base_url,
+                    &exchange_config.api_key,
+                )));
+            }
+            "binance" => {
+                // Define symbol mappings for Binance
+                let mut symbol_map = HashMap::new();
+                symbol_map.insert("PHA".to_string(), "PHAUSDT".to_string());
+                symbol_map.insert("SUI".to_string(), "SUIUSDT".to_string());
+                symbol_map.insert("DUSK".to_string(), "DUSKUSDT".to_string());
+
+                exchanges.push(Box::new(BinanceExchange::new(
+                    &exchange_config.base_url,
+                    &exchange_config.api_key,
+                    &exchange_config.api_secret,
+                    symbol_map,
+                )));
+            }
+            _ => {
+                log::warn!("Unsupported exchange: {}", exchange_config.name);
+            }
+        }
+    }
+
+    exchanges
 }
 
 pub trait SentimentProvider {
@@ -362,38 +529,4 @@ impl SentimentProvider for LunarCrushProvider {
 
 pub fn create_sentiment_provider(api_url: &str, api_key: &str) -> LunarCrushProvider {
     LunarCrushProvider::new(api_url, api_key)
-}
-
-#[derive(Debug, Clone)]
-pub struct DetailedSentiment {
-    pub current_value: f64,
-    pub daily_average: f64,
-    pub one_week_value: f64,
-    pub one_week_change: f64,
-    pub one_month_value: f64,
-    pub one_month_change: f64,
-    pub one_year_high: f64,
-    pub one_year_high_date: String,
-    pub one_year_low: f64,
-    pub one_year_low_date: String,
-    pub supportive_themes: Vec<Theme>,
-    pub critical_themes: Vec<Theme>,
-    pub network_engagement: HashMap<String, NetworkEngagement>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Theme {
-    pub name: String,
-    pub weight: f64,
-    pub description: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct NetworkEngagement {
-    pub positive: u64,
-    pub positive_percentage: f64,
-    pub neutral: u64,
-    pub neutral_percentage: f64,
-    pub negative: u64,
-    pub negative_percentage: f64,
 }

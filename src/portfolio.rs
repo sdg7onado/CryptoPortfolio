@@ -85,7 +85,7 @@ impl Portfolio {
 
         for (symbol, quantity, current_price, sentiment) in to_sell {
             let proceeds = self.sell_holding(&symbol, exchange, db, notifier).await?;
-            log_action(
+            let _ = log_action(
                 "info",
                 &format!(
                     "Sold {} {} at ${:.2} (sentiment: {:.2}) for ${:.2}",
