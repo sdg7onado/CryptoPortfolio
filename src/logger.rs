@@ -20,9 +20,10 @@ pub fn init_logger(env: &str) -> Result<(), PortfolioError> {
     Ok(())
 }
 
-pub fn log_action(action: &str, env: &str) -> Result<(), PortfolioError> {
+pub fn log_action(action: &str, env: Option<&str>) -> Result<(), PortfolioError> {
     let timestamp = chrono::Utc::now().to_rfc3339();
     let log = format!("[{}] {}\n", timestamp, action);
+    let env = env.unwrap_or("production");
     info!("{}", action);
     if env == "prod" {
         let mut file = OpenOptions::new()

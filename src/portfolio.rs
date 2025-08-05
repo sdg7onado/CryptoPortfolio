@@ -3,7 +3,7 @@ use crate::database::Database;
 use crate::errors::PortfolioError;
 use crate::exchange::Exchange;
 use crate::exchange::SentimentProvider;
-use crate::exchange::{CoinGeckoExchange, LunarCrushProvider};
+use crate::exchange::{BinanceExchange, LunarCrushProvider};
 use crate::logger::log_action;
 use crate::notification::Notifier;
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ impl Portfolio {
 
     pub async fn check_portfolio(
         &mut self,
-        exchange: &CoinGeckoExchange,
+        exchange: &BinanceExchange,
         sentiment_provider: &LunarCrushProvider,
         db: &Database,
         notifier: &Notifier,
@@ -86,11 +86,11 @@ impl Portfolio {
         for (symbol, quantity, current_price, sentiment) in to_sell {
             let proceeds = self.sell_holding(&symbol, exchange, db, notifier).await?;
             let _ = log_action(
-                "info",
                 &format!(
                     "Sold {} {} at ${:.2} (sentiment: {:.2}) for ${:.2}",
                     quantity, symbol, current_price, sentiment, proceeds
                 ),
+                None,
             );
             notifier.notify_significant_action(&format!(
                 "{}: Negative sentiment triggered at ${:.2} (sentiment: {:.2}), sold {} tokens for ${:.2}.",
@@ -120,7 +120,7 @@ impl Portfolio {
         Ok(total_value)
     }
 
-    pub async fn get_value(&self, exchange: &CoinGeckoExchange) -> Result<f64, PortfolioError> {
+    pub async fn get_value(&self, exchange: &BinanceExchange) -> Result<f64, PortfolioError> {
         let mut total_value = self.cash;
         for holding in &self.holdings {
             let current_price = exchange.fetch_price(&holding.symbol).await?;
@@ -132,7 +132,7 @@ impl Portfolio {
     pub async fn sell_holding(
         &mut self,
         symbol: &str,
-        exchange: &CoinGeckoExchange,
+        exchange: &BinanceExchange,
         db: &Database,
         notifier: &Notifier,
     ) -> Result<f64, PortfolioError> {
@@ -144,11 +144,11 @@ impl Portfolio {
             db.log_trade(&holding.symbol, holding.quantity, price, "sell")
                 .await?;
             log_action(
-                "info",
                 &format!(
                     "Sold {} {} at ${:.2} for ${:.2}",
                     holding.quantity, holding.symbol, price, proceeds
                 ),
+                None,
             );
             notifier
                 .notify_significant_action(&format!(

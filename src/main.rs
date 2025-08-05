@@ -25,6 +25,7 @@ mod portfolio;
 async fn portfolio_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
     init_logger(&config.environment)?;
+    let env = Some(config.environment.as_str());
     let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
     let exchange = create_exchange(&config.exchanges[0]);
     let sentiment_provider =
@@ -45,7 +46,7 @@ async fn portfolio_screen() -> Result<(), PortfolioError> {
                         "{}: Using cached price ${:.2}",
                         holding.symbol, cached_price
                     ),
-                    &config.environment,
+                    env,
                 )?;
                 current_prices.insert(holding.symbol.clone(), cached_price);
             } else {
@@ -53,7 +54,7 @@ async fn portfolio_screen() -> Result<(), PortfolioError> {
                 db.cache_price(&holding.symbol, price).await?;
                 log_action(
                     &format!("{}: Fetched price ${:.2}", holding.symbol, price),
-                    &config.environment,
+                    env,
                 )?;
                 current_prices.insert(holding.symbol.clone(), price);
             }
@@ -64,7 +65,7 @@ async fn portfolio_screen() -> Result<(), PortfolioError> {
                         "{}: Using cached sentiment {:.2}",
                         holding.symbol, cached_sentiment
                     ),
-                    &config.environment,
+                    env,
                 )?;
             } else {
                 let sentiment = sentiment_provider.fetch_sentiment(&holding.symbol).await?;
@@ -73,7 +74,7 @@ async fn portfolio_screen() -> Result<(), PortfolioError> {
                 sentiments.insert(holding.symbol.clone(), sentiment);
                 log_action(
                     &format!("{}: Fetched sentiment {:.2}", holding.symbol, sentiment),
-                    &config.environment,
+                    env,
                 )?;
             }
         }
@@ -96,10 +97,7 @@ async fn portfolio_screen() -> Result<(), PortfolioError> {
         previous_sentiments = sentiments.clone();
 
         display_portfolio(&portfolio, total_value, &sentiments);
-        log_action(
-            &format!("Portfolio value: ${:.2}", total_value),
-            &config.environment,
-        )?;
+        log_action(&format!("Portfolio value: ${:.2}", total_value), env)?;
 
         sleep(Duration::from_secs(config.portfolio.check_interval_secs)).await;
     }
@@ -108,6 +106,7 @@ async fn portfolio_screen() -> Result<(), PortfolioError> {
 async fn sentiment_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
     init_logger(&config.environment)?;
+    let env = Some(config.environment.as_str());
     let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
     let sentiment_provider =
         create_sentiment_provider(&config.sentiment.api_url, &config.sentiment.api_key);
@@ -123,7 +122,7 @@ async fn sentiment_screen() -> Result<(), PortfolioError> {
                         "{}: Using cached sentiment {:.2}",
                         holding.symbol, cached_sentiment
                     ),
-                    &config.environment,
+                    env,
                 )?;
             } else {
                 let sentiment = sentiment_provider.fetch_sentiment(&holding.symbol).await?;
@@ -132,7 +131,7 @@ async fn sentiment_screen() -> Result<(), PortfolioError> {
                 sentiments.insert(holding.symbol.clone(), sentiment);
                 log_action(
                     &format!("{}: Fetched sentiment {:.2}", holding.symbol, sentiment),
-                    &config.environment,
+                    env,
                 )?;
             }
         }
