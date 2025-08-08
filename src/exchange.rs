@@ -129,7 +129,7 @@ pub fn create_exchange(config: &ExchangeConfig) -> BinanceExchange {
             )
         }
         _ => {
-            log_action(&format!("Unsupported exchange: {}", config.name), None);
+            let _ = log_action(&format!("Unsupported exchange: {}", config.name), None);
             panic!("Unsupported exchange: {}", config.name)
         }
     }

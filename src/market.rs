@@ -2,6 +2,10 @@ use crate::database::Database;
 use crate::errors::PortfolioError;
 use crate::exchange::{BinanceExchange, Exchange};
 use comfy_table::{Cell, Color, Table};
+use icu::decimal::{FixedDecimal, FixedDecimalFormatter};
+use icu::locid::Locale as IcuLocale;
+use icu_testdata::get_provider;
+use locale_config::Locale as SystemLocale;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -37,7 +41,7 @@ impl<'a> MarketProvider<'a> {
         symbols: &[String],
     ) -> Result<Vec<MarketData>, PortfolioError> {
         let url = format!(
-            "{}/coins/markets?vs_currency=usd&per_page=100&page=1",
+            "{}/coins/markets?vs_currency=usd&per_page=1000&page=1",
             self.api_url
         );
         let mut headers = HeaderMap::new();
@@ -199,7 +203,10 @@ pub async fn display_market_screen<'a>(
         };
         table.add_row(vec![
             Cell::new(data.symbol),
-            Cell::new(format!("${:.2}", data.price)),
+            Cell::new(format!(
+                "${:.2}",
+                format_price(data.price, &SystemLocale::en)
+            )),
             Cell::new(format!("${:.0}", data.market_cap)),
             change_cell,
         ]);
@@ -211,4 +218,15 @@ pub async fn display_market_screen<'a>(
         table
     );
     Ok(())
+}
+
+pub fn format_price(price: f64, locale: &SystemLocale) -> String {
+    let provider = get_provider().expect("Failed to get ICU data provider");
+    let formatter = FixedDecimalFormatter::try_new(
+        &provider,
+        IcuLocale::from(locale.to_string()),
+        FixedDecimal::from(price),
+    )
+    .expect("Failed to create FixedDecimalFormatter");
+    formatter.format().to_string()
 }
