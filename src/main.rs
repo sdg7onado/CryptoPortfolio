@@ -155,8 +155,12 @@ async fn market_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
     init_logger(&config.environment)?;
     let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
-    let market_provider =
-        MarketProvider::new(&config.exchanges[0].base_url, &config.exchanges[0].api_key);
+    let exchange = create_exchange(&config.exchanges[0]);
+    let market_provider = MarketProvider::new(
+        &config.marketprovider.base_url,
+        &config.marketprovider.api_key,
+        &exchange,
+    );
 
     loop {
         display_market_screen(

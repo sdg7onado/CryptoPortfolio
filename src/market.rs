@@ -1,29 +1,34 @@
 use crate::database::Database;
 use crate::errors::PortfolioError;
+use crate::exchange::{BinanceExchange, Exchange};
 use comfy_table::{Cell, Color, Table};
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)] // From previous fix
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MarketData {
     pub symbol: String,
+    #[serde(rename = "current_price")]
     pub price: f64,
     pub market_cap: f64,
     pub price_change_24h: f64,
 }
 
-pub struct MarketProvider {
+pub struct MarketProvider<'a> {
     client: Client,
     api_url: String,
     api_key: String,
+    exchange: &'a BinanceExchange,
 }
 
-impl MarketProvider {
-    pub fn new(api_url: &str, api_key: &str) -> Self {
+impl<'a> MarketProvider<'a> {
+    pub fn new(api_url: &str, api_key: &str, exchange: &'a BinanceExchange) -> Self {
         MarketProvider {
             client: Client::new(),
             api_url: api_url.to_string(),
             api_key: api_key.to_string(),
+            exchange: exchange,
         }
     }
 
@@ -31,14 +36,21 @@ impl MarketProvider {
         &self,
         symbols: &[String],
     ) -> Result<Vec<MarketData>, PortfolioError> {
-        // Mock CoinGecko API call for all coins (replace with real endpoint)
         let url = format!(
-            "{}/coins/markets?vs_currency=usd&per_page=100&page=1&key={}",
-            self.api_url, self.api_key
+            "{}/coins/markets?vs_currency=usd&per_page=100&page=1",
+            self.api_url
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(USER_AGENT, HeaderValue::from_static("crypto_portfolio/0.1"));
+        headers.insert(
+            "x-cg-demo-api-key",
+            HeaderValue::from_str(&self.api_key)
+                .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?,
         );
         let resp = self
             .client
             .get(&url)
+            .headers(headers)
             .header("User-Agent", "crypto_portfolio/0.1")
             .send()
             .await
@@ -51,11 +63,12 @@ impl MarketProvider {
         // Ensure pinned symbols (PHA, SUI, DUSK) are included
         for symbol in symbols {
             if !data.iter().any(|d| d.symbol == *symbol) {
-                let price = self.fetch_single_price(symbol).await?;
+                //let price = self.exchange.fetch_single_price(symbol).await?;
+                let price = self.exchange.fetch_price(symbol).await?;
                 data.push(MarketData {
                     symbol: symbol.clone(),
                     price,
-                    market_cap: 0.0, // Placeholder; fetch real market cap if needed
+                    market_cap: 0.0,
                     price_change_24h: 0.0,
                 });
             }
@@ -63,11 +76,14 @@ impl MarketProvider {
         Ok(data)
     }
 
-    async fn fetch_single_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
+    /*     async fn fetch_single_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
+        let exchange = create_exchange(&config.exchanges[0]);
         let url = format!(
-            "{}/simple/price?ids={}&vs_currencies=usd&key={}",
-            self.api_url, symbol, self.api_key
+            //"{}/simple/price?ids={}&vs_currencies=usd&key={}USDT",
+            "{}/api/v3/avgPrice?symbol={}USDT",
+            self.exchange.api_url, symbol
         );
+        let _ = log_action(&format!("Got here2 {} ", url), None);
         let resp: serde_json::Value = self
             .client
             .get(&url)
@@ -82,7 +98,7 @@ impl MarketProvider {
             .as_f64()
             .ok_or_else(|| PortfolioError::ExchangeError("Price not found".to_string()))?;
         Ok(price)
-    }
+    } */
 
     pub async fn fetch_market_data_mock(
         &self,
@@ -130,8 +146,8 @@ impl MarketProvider {
     }
 }
 
-pub async fn display_market_screen(
-    market_provider: &MarketProvider,
+pub async fn display_market_screen<'a>(
+    market_provider: &MarketProvider<'a>,
     db: &Database,
     pinned_symbols: &[String],
     sort_by: &str,

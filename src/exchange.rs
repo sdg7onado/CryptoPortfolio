@@ -49,9 +49,9 @@ struct PriceResponse {
 }
 pub struct BinanceExchange {
     client: Client,
-    api_key: String,
-    api_secret: String,
-    api_url: String,
+    pub api_key: String,
+    pub api_secret: String,
+    pub api_url: String,
     symbol_map: HashMap<String, String>, // Maps app symbols (e.g., "PHA") to Binance symbols (e.g., "PHAUSDT")
 }
 

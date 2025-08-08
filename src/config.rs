@@ -6,6 +6,7 @@ use std::fs;
 pub struct Config {
     pub environment: String, // "dev" or "prod"
     pub exchanges: Vec<ExchangeConfig>,
+    pub marketprovider: ExchangeConfig,
     pub database: DatabaseConfig,
     pub redis: RedisConfig,
     pub portfolio: PortfolioConfig,

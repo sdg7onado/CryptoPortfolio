@@ -143,7 +143,7 @@ impl Portfolio {
             self.cash += proceeds;
             db.log_trade(&holding.symbol, holding.quantity, price, "sell")
                 .await?;
-            log_action(
+            let _ = log_action(
                 &format!(
                     "Sold {} {} at ${:.2} for ${:.2}",
                     holding.quantity, holding.symbol, price, proceeds
