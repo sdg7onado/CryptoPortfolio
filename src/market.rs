@@ -1,11 +1,12 @@
+use std::str::FromStr;
+
 use crate::database::Database;
 use crate::errors::PortfolioError;
 use crate::exchange::{BinanceExchange, Exchange};
 use comfy_table::{Cell, Color, Table};
-use icu::decimal::{FixedDecimal, FixedDecimalFormatter};
-use icu::locid::Locale as IcuLocale;
-use icu_testdata::get_provider;
-use locale_config::Locale as SystemLocale;
+use icu::decimal::input::Decimal;
+use icu::decimal::DecimalFormatter;
+use icu::locale::{locale, Locale};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -203,11 +204,8 @@ pub async fn display_market_screen<'a>(
         };
         table.add_row(vec![
             Cell::new(data.symbol),
-            Cell::new(format!(
-                "${:.2}",
-                format_price(data.price, &SystemLocale::en)
-            )),
-            Cell::new(format!("${:.0}", data.market_cap)),
+            Cell::new(format!("${:.2}", format_number(data.price, None))),
+            Cell::new(format!("${:.0}", format_number(data.market_cap, None))),
             change_cell,
         ]);
     }
@@ -220,13 +218,13 @@ pub async fn display_market_screen<'a>(
     Ok(())
 }
 
-pub fn format_price(price: f64, locale: &SystemLocale) -> String {
-    let provider = get_provider().expect("Failed to get ICU data provider");
-    let formatter = FixedDecimalFormatter::try_new(
-        &provider,
-        IcuLocale::from(locale.to_string()),
-        FixedDecimal::from(price),
-    )
-    .expect("Failed to create FixedDecimalFormatter");
-    formatter.format().to_string()
+fn format_number(amount: f64, locale: Option<Locale>) -> String {
+    let locale = locale.unwrap_or(locale!("en-US"));
+
+    let formatter = DecimalFormatter::try_new(locale.into(), Default::default())
+        .expect("locale should be present");
+
+    let decimal = Decimal::from_str(&amount.to_string()).unwrap();
+
+    formatter.format(&decimal).to_string()
 }
