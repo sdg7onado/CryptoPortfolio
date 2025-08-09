@@ -154,7 +154,7 @@ async fn sentiment_screen() -> Result<(), PortfolioError> {
 async fn market_screen() -> Result<(), PortfolioError> {
     let config = load_config()?;
     init_logger(&config.environment)?;
-    let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
+    //let db = Database::new(&config.database.postgres_url, &config.redis.url).await?;
     let exchange = create_exchange(&config.exchanges[0]);
     let market_provider = MarketProvider::new(
         &config.marketprovider.base_url,

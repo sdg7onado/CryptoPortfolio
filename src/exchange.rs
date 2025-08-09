@@ -18,6 +18,10 @@ pub struct DetailedSentiment {
     pub one_week_change: f64,
     pub one_month_value: f64,
     pub one_month_change: f64,
+    pub six_months_value: f64,
+    pub six_months_change: f64,
+    pub one_year_value: f64,
+    pub one_year_change: f64,
     pub one_year_high: f64,
     pub one_year_high_date: String,
     pub one_year_low: f64,
@@ -36,17 +40,250 @@ pub struct Theme {
 
 #[derive(Debug, Clone)]
 pub struct NetworkEngagement {
-    pub positive: u64,
+    pub positive: String,
     pub positive_percentage: f64,
-    pub neutral: u64,
+    pub neutral: String,
     pub neutral_percentage: f64,
-    pub negative: u64,
+    pub negative: String,
     pub negative_percentage: f64,
 }
-#[derive(Deserialize)]
-struct PriceResponse {
-    price: f64,
+
+pub struct LunarCrushProvider {
+    client: reqwest::Client,
+    base_url: String,
+    api_key: String,
 }
+
+impl LunarCrushProvider {
+    pub fn new(api_url: &str, api_key: &str) -> Self {
+        LunarCrushProvider {
+            client: reqwest::Client::new(),
+            base_url: api_url.to_string(),
+            api_key: api_key.to_string(),
+        }
+    }
+}
+
+impl SentimentProvider for LunarCrushProvider {
+    async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError> {
+        let detailed = self.fetch_detailed_sentiment(symbol).await?;
+        Ok(detailed.current_value)
+    }
+
+    async fn fetch_detailed_sentiment(
+        &self,
+        symbol: &str,
+    ) -> Result<DetailedSentiment, PortfolioError> {
+        let url = format!(
+            "{}/topic/{}/sentiment?key={}",
+            self.base_url,
+            symbol.to_lowercase(),
+            self.api_key
+        );
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            PortfolioError::ApiError(format!("Failed to fetch sentiment for {}: {}", symbol, e))
+        })?;
+
+        let html_text = response.text().await.map_err(|e| {
+            PortfolioError::ApiError(format!("Failed to parse HTML for {}: {}", symbol, e))
+        })?;
+
+        let _ = log_action(
+            &format!(
+                "Fetched sentiment for symbol: {} \n Raw: {}",
+                symbol, html_text
+            ),
+            None,
+        );
+
+        let html = Html::parse_document(&html_text);
+
+        let _ = log_action(
+            &format!(
+                "Fetched sentiment for symbol: {} \n Pre: {}",
+                symbol,
+                html.html()
+            ),
+            None,
+        );
+
+        let html = Html::parse_document(&html.html());
+
+        // Extract text from <pre> tag
+        let pre_selector = Selector::parse("body").unwrap();
+        let pre_text = html
+            .select(&pre_selector)
+            .next()
+            .ok_or_else(|| PortfolioError::ApiError("Missing <pre> tag in HTML".to_string()))?
+            .inner_html();
+
+        // Split pre_text into lines for parsing
+        let lines: Vec<&str> = pre_text.lines().collect();
+
+        let mut current_value = 0.0;
+        let mut daily_average = 0.0;
+        let mut one_week_value = 0.0;
+        let mut one_week_change = 0.0;
+        let mut one_month_value = 0.0;
+        let mut one_month_change = 0.0;
+        let mut six_months_value = 0.0;
+        let mut six_months_change = 0.0;
+        let mut one_year_value = 0.0;
+        let mut one_year_change = 0.0;
+        let mut one_year_high = 0.0;
+        let mut one_year_high_date = String::new();
+        let mut one_year_low = 0.0;
+        let mut one_year_low_date = String::new();
+        let mut supportive_themes = Vec::new();
+        let mut critical_themes = Vec::new();
+        //let mut network_engagement: HashMap<String, NetworkEngagement> = HashMap::new();
+
+        let parse_percentage = |text: &str| -> f64 {
+            text.trim_end_matches('%')
+                .trim()
+                .parse::<f64>()
+                .unwrap_or(0.0)
+                / 100.0
+        };
+
+        let parse_number = |text: &str| -> String { text.replace(",", "").trim().to_string() };
+
+        let mut in_supportive_themes = false;
+        let mut in_critical_themes = false;
+        let mut in_network_table = false;
+        let mut network_table_lines = Vec::new();
+
+        for line in lines {
+            let line_trim = line.trim();
+            if line_trim.starts_with("**Current Value**:") {
+                current_value = parse_percentage(&line_trim[18..]);
+            } else if line_trim.starts_with("**Daily Average**:") {
+                daily_average = parse_percentage(&line_trim[18..]);
+            } else if line_trim.starts_with("**1 Week**:") {
+                let parts: Vec<&str> = line_trim[11..].split_whitespace().collect();
+                one_week_value = parse_percentage(parts[0]);
+                one_week_change = parse_percentage(&parts[1][0..parts[1].len() - 1]);
+            } else if line_trim.starts_with("**1 Month**:") {
+                let parts: Vec<&str> = line_trim[12..].split_whitespace().collect();
+                one_month_value = parse_percentage(parts[0]);
+                one_month_change = parse_percentage(&parts[1][0..parts[1].len() - 1]);
+            } else if line_trim.starts_with("**6 Months**:") {
+                let parts: Vec<&str> = line_trim[13..].split_whitespace().collect();
+                six_months_value = parse_percentage(parts[0]);
+                six_months_change = parse_percentage(&parts[1][0..parts[1].len() - 1]);
+            } else if line_trim.starts_with("**1 Year**:") {
+                let parts: Vec<&str> = line_trim[11..].split_whitespace().collect();
+                one_year_value = parse_percentage(parts[0]);
+                one_year_change = parse_percentage(&parts[1][0..parts[1].len() - 1]);
+            } else if line_trim.starts_with("**1-Year High**:") {
+                let parts: Vec<&str> = line_trim[16..].split(" on ").collect();
+                one_year_high = parse_percentage(parts[0]);
+                one_year_high_date = parts[1].to_string();
+            } else if line_trim.starts_with("**1-Year Low**:") {
+                let parts: Vec<&str> = line_trim[15..].split(" on ").collect();
+                one_year_low = parse_percentage(parts[0]);
+                one_year_low_date = parts[1].to_string();
+            } else if line_trim.starts_with("**Most Supportive Themes**") {
+                in_supportive_themes = true;
+                in_critical_themes = false;
+            } else if line_trim.starts_with("**Most Critical Themes**") {
+                in_supportive_themes = false;
+                in_critical_themes = true;
+            } else if line_trim.starts_with("Network engagement breakdown:") {
+                in_supportive_themes = false;
+                in_critical_themes = false;
+                in_network_table = true;
+            } else if in_supportive_themes {
+                if line_trim.starts_with("- **") {
+                    let theme_end = line_trim.find(":**").unwrap_or(line_trim.len());
+                    let name = &line_trim[4..theme_end - 3];
+                    let weight_start = line_trim.find("(").unwrap_or(line_trim.len());
+                    let weight_end = line_trim.find("%)").unwrap_or(line_trim.len());
+                    let weight_str = &line_trim[weight_start + 1..weight_end];
+                    let weight = parse_percentage(weight_str);
+                    let description = &line_trim[weight_end + 3..].trim();
+                    supportive_themes.push(Theme {
+                        name: name.to_string(),
+                        weight,
+                        description: description.to_string(),
+                    });
+                }
+            } else if in_critical_themes {
+                if line_trim.starts_with("- **") {
+                    let theme_end = line_trim.find(":**").unwrap_or(line_trim.len());
+                    let name = &line_trim[4..theme_end - 3];
+                    let weight_start = line_trim.find("(").unwrap_or(line_trim.len());
+                    let weight_end = line_trim.find("%)").unwrap_or(line_trim.len());
+                    let weight_str = &line_trim[weight_start + 1..weight_end];
+                    let weight = parse_percentage(weight_str);
+                    let description = &line_trim[weight_end + 3..].trim();
+                    critical_themes.push(Theme {
+                        name: name.to_string(),
+                        weight,
+                        description: description.to_string(),
+                    });
+                }
+            } else if in_network_table {
+                if line_trim.starts_with("|") {
+                    network_table_lines.push(line_trim.to_string());
+                }
+            }
+        }
+
+        // Parse network engagement table
+        let mut network_engagement = HashMap::new();
+        for line in network_table_lines.iter().skip(1) {
+            // Skip header
+            let cells: Vec<&str> = line.split('|').map(|s| s.trim()).collect();
+            if cells.len() == 8 {
+                // Including empty cells
+                let network = cells[1];
+                let positive = parse_number(cells[2]);
+                let positive_percentage = parse_percentage(cells[3]);
+                let neutral = parse_number(cells[4]);
+                let neutral_percentage = parse_percentage(cells[5]);
+                let negative = parse_number(cells[6]);
+                let negative_percentage = parse_percentage(cells[7]);
+                network_engagement.insert(
+                    network.to_string(),
+                    NetworkEngagement {
+                        positive,
+                        positive_percentage,
+                        neutral,
+                        neutral_percentage,
+                        negative,
+                        negative_percentage,
+                    },
+                );
+            }
+        }
+
+        Ok(DetailedSentiment {
+            current_value,
+            daily_average,
+            one_week_value,
+            one_week_change,
+            one_month_value,
+            one_month_change,
+            six_months_value,
+            six_months_change,
+            one_year_value,
+            one_year_change,
+            one_year_high,
+            one_year_high_date,
+            one_year_low,
+            one_year_low_date,
+            supportive_themes,
+            critical_themes,
+            network_engagement,
+        })
+    }
+}
+
+pub fn create_sentiment_provider(api_url: &str, api_key: &str) -> LunarCrushProvider {
+    LunarCrushProvider::new(api_url, api_key)
+}
+
 pub struct BinanceExchange {
     client: Client,
     pub api_key: String,
@@ -94,6 +331,7 @@ impl Exchange for BinanceExchange {
 
         #[derive(Deserialize)]
         struct BinancePrice {
+            symbol: String,
             price: String,
         }
 
@@ -134,6 +372,7 @@ pub fn create_exchange(config: &ExchangeConfig) -> BinanceExchange {
         }
     }
 }
+
 pub trait SentimentProvider {
     async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError>;
     async fn fetch_detailed_sentiment(
@@ -142,296 +381,12 @@ pub trait SentimentProvider {
     ) -> Result<DetailedSentiment, PortfolioError>;
 }
 
-pub struct LunarCrushProvider {
-    client: reqwest::Client,
-    base_url: String,
-    api_key: String,
-}
-
-impl LunarCrushProvider {
-    pub fn new(api_url: &str, api_key: &str) -> Self {
-        LunarCrushProvider {
-            client: reqwest::Client::new(),
-            base_url: api_url.to_string(),
-            api_key: api_key.to_string(),
-        }
-    }
-}
 #[derive(serde::Deserialize)]
 struct SentimentResponse {
     sentiment: f64,
 }
 
-impl SentimentProvider for LunarCrushProvider {
-    // async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError> {
-    //     let url = format!(
-    //         "{}/topic/{}/sentiment?key={}",
-    //         self.base_url, symbol, self.api_key
-    //     );
-    //     let resp = self
-    //         .client
-    //         .get(&url)
-    //         .header("User-Agent", "crypto_portfolio/0.1")
-    //         .send()
-    //         .await
-    //         .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
-    //     let data: SentimentResponse = resp
-    //         .json()
-    //         .await
-    //         .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
-    //     Ok(data.sentiment)
-    // }
-
-    async fn fetch_sentiment(&self, symbol: &str) -> Result<f64, PortfolioError> {
-        let detailed = self.fetch_detailed_sentiment(symbol).await?;
-        Ok(detailed.current_value)
-    }
-
-    async fn fetch_detailed_sentiment(
-        &self,
-        symbol: &str,
-    ) -> Result<DetailedSentiment, PortfolioError> {
-        let url = format!(
-            "{}/topic/{}/sentiment?key={}",
-            self.base_url,
-            symbol.to_lowercase(),
-            self.api_key
-        );
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            PortfolioError::ApiError(format!("Failed to fetch sentiment for {}: {}", symbol, e))
-        })?;
-
-        let html_text = response.text().await.map_err(|e| {
-            PortfolioError::ApiError(format!("Failed to parse HTML for {}: {}", symbol, e))
-        })?;
-        let html = Html::parse_document(&html_text);
-
-        // Define CSS selectors (adjust based on actual HTML)
-        let current_value_selector = Selector::parse(".current-value").unwrap();
-        let daily_average_selector = Selector::parse(".daily-average").unwrap();
-        let one_week_value_selector = Selector::parse(".one-week .value").unwrap();
-        let one_week_change_selector = Selector::parse(".one-week .change").unwrap();
-        let one_month_value_selector = Selector::parse(".one-month .value").unwrap();
-        let one_month_change_selector = Selector::parse(".one-month .change").unwrap();
-        let one_year_high_value_selector = Selector::parse(".one-year-high .value").unwrap();
-        let one_year_high_date_selector = Selector::parse(".one-year-high .date").unwrap();
-        let one_year_low_value_selector = Selector::parse(".one-year-low .value").unwrap();
-        let one_year_low_date_selector = Selector::parse(".one-year-low .date").unwrap();
-        let supportive_theme_selector = Selector::parse(".supportive-themes .theme").unwrap();
-        let critical_theme_selector = Selector::parse(".critical-themes .theme").unwrap();
-        let theme_name_selector = Selector::parse(".name").unwrap();
-        let theme_weight_selector = Selector::parse(".weight").unwrap();
-        let theme_description_selector = Selector::parse(".description").unwrap();
-        let network_row_selector = Selector::parse(".network-engagement tr").unwrap();
-        let network_selector = Selector::parse(".network").unwrap();
-        let positive_selector = Selector::parse(".positive").unwrap();
-        let positive_percentage_selector = Selector::parse(".positive-percentage").unwrap();
-        let neutral_selector = Selector::parse(".neutral").unwrap();
-        let neutral_percentage_selector = Selector::parse(".neutral-percentage").unwrap();
-        let negative_selector = Selector::parse(".negative").unwrap();
-        let negative_percentage_selector = Selector::parse(".negative-percentage").unwrap();
-
-        // Helper function to parse percentage strings (e.g., "92%" -> 0.92)
-        let parse_percentage = |text: &str| -> Result<f64, PortfolioError> {
-            text.trim_end_matches('%')
-                .parse::<f64>()
-                .map(|v| v / 100.0)
-                .map_err(|e| {
-                    PortfolioError::ApiError(format!("Failed to parse percentage {}: {}", text, e))
-                })
-        };
-
-        // Extract fields
-        let current_value = html
-            .select(&current_value_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing current-value".to_string()))?
-            .inner_html();
-        let current_value = parse_percentage(&current_value)?;
-
-        let daily_average = html
-            .select(&daily_average_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing daily-average".to_string()))?
-            .inner_html();
-        let daily_average = parse_percentage(&daily_average)?;
-
-        let one_week_value = html
-            .select(&one_week_value_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-week value".to_string()))?
-            .inner_html();
-        let one_week_value = parse_percentage(&one_week_value)?;
-
-        let one_week_change = html
-            .select(&one_week_change_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-week change".to_string()))?
-            .inner_html();
-        let one_week_change = parse_percentage(&one_week_change)?;
-
-        let one_month_value = html
-            .select(&one_month_value_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-month value".to_string()))?
-            .inner_html();
-        let one_month_value = parse_percentage(&one_month_value)?;
-
-        let one_month_change = html
-            .select(&one_month_change_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-month change".to_string()))?
-            .inner_html();
-        let one_month_change = parse_percentage(&one_month_change)?;
-
-        let one_year_high = html
-            .select(&one_year_high_value_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-year-high value".to_string()))?
-            .inner_html();
-        let one_year_high = parse_percentage(&one_year_high)?;
-
-        let one_year_high_date = html
-            .select(&one_year_high_date_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-year-high date".to_string()))?
-            .inner_html();
-
-        let one_year_low = html
-            .select(&one_year_low_value_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-year-low value".to_string()))?
-            .inner_html();
-        let one_year_low = parse_percentage(&one_year_low)?;
-
-        let one_year_low_date = html
-            .select(&one_year_low_date_selector)
-            .next()
-            .ok_or_else(|| PortfolioError::ApiError("Missing one-year-low date".to_string()))?
-            .inner_html();
-
-        let supportive_themes = html
-            .select(&supportive_theme_selector)
-            .map(|theme| {
-                let name = theme
-                    .select(&theme_name_selector)
-                    .next()
-                    .map(|n| n.inner_html())
-                    .unwrap_or_default();
-                let weight = theme
-                    .select(&theme_weight_selector)
-                    .next()
-                    .map(|w| parse_percentage(&w.inner_html()).unwrap_or(0.0))
-                    .unwrap_or(0.0);
-                let description = theme
-                    .select(&theme_description_selector)
-                    .next()
-                    .map(|d| d.inner_html())
-                    .unwrap_or_default();
-                Theme {
-                    name,
-                    weight,
-                    description,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let critical_themes = html
-            .select(&critical_theme_selector)
-            .map(|theme| {
-                let name = theme
-                    .select(&theme_name_selector)
-                    .next()
-                    .map(|n| n.inner_html())
-                    .unwrap_or_default();
-                let weight = theme
-                    .select(&theme_weight_selector)
-                    .next()
-                    .map(|w| parse_percentage(&w.inner_html()).unwrap_or(0.0))
-                    .unwrap_or(0.0);
-                let description = theme
-                    .select(&theme_description_selector)
-                    .next()
-                    .map(|d| d.inner_html())
-                    .unwrap_or_default();
-                Theme {
-                    name,
-                    weight,
-                    description,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let network_engagement = html
-            .select(&network_row_selector)
-            .map(|row| {
-                let network = row
-                    .select(&network_selector)
-                    .next()
-                    .map(|n| n.inner_html())
-                    .unwrap_or_default();
-                let positive = row
-                    .select(&positive_selector)
-                    .next()
-                    .map(|p| p.inner_html().parse::<u64>().unwrap_or(0))
-                    .unwrap_or(0);
-                let positive_percentage = row
-                    .select(&positive_percentage_selector)
-                    .next()
-                    .map(|p| parse_percentage(&p.inner_html()).unwrap_or(0.0))
-                    .unwrap_or(0.0);
-                let neutral = row
-                    .select(&neutral_selector)
-                    .next()
-                    .map(|n| n.inner_html().parse::<u64>().unwrap_or(0))
-                    .unwrap_or(0);
-                let neutral_percentage = row
-                    .select(&neutral_percentage_selector)
-                    .next()
-                    .map(|n| parse_percentage(&n.inner_html()).unwrap_or(0.0))
-                    .unwrap_or(0.0);
-                let negative = row
-                    .select(&negative_selector)
-                    .next()
-                    .map(|n| n.inner_html().parse::<u64>().unwrap_or(0))
-                    .unwrap_or(0);
-                let negative_percentage = row
-                    .select(&negative_percentage_selector)
-                    .next()
-                    .map(|n| parse_percentage(&n.inner_html()).unwrap_or(0.0))
-                    .unwrap_or(0.0);
-                (
-                    network,
-                    NetworkEngagement {
-                        positive,
-                        positive_percentage,
-                        neutral,
-                        neutral_percentage,
-                        negative,
-                        negative_percentage,
-                    },
-                )
-            })
-            .collect::<HashMap<_, _>>();
-
-        Ok(DetailedSentiment {
-            current_value,
-            daily_average,
-            one_week_value,
-            one_week_change,
-            one_month_value,
-            one_month_change,
-            one_year_high,
-            one_year_high_date,
-            one_year_low,
-            one_year_low_date,
-            supportive_themes,
-            critical_themes,
-            network_engagement,
-        })
-    }
-}
-
-pub fn create_sentiment_provider(api_url: &str, api_key: &str) -> LunarCrushProvider {
-    LunarCrushProvider::new(api_url, api_key)
+#[derive(Deserialize)]
+struct PriceResponse {
+    price: f64,
 }
