@@ -165,7 +165,6 @@ async fn market_screen() -> Result<(), PortfolioError> {
     loop {
         display_market_screen(
             &market_provider,
-            &db,
             &config.market.pinned_symbols,
             &config.market.sort_by,
             config.display.use_colors,

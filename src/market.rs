@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use crate::database::Database;
 use crate::errors::PortfolioError;
 use crate::exchange::{BinanceExchange, Exchange};
 use comfy_table::{Cell, Color, Table};
@@ -18,6 +17,10 @@ pub struct MarketData {
     pub price: f64,
     pub market_cap: f64,
     pub price_change_24h: f64,
+    pub price_change_percentage_24h: f64,
+    pub high_24h: f64,
+    pub low_24h: f64,
+    pub total_volume: f64,
 }
 
 pub struct MarketProvider<'a> {
@@ -75,85 +78,19 @@ impl<'a> MarketProvider<'a> {
                     price,
                     market_cap: 0.0,
                     price_change_24h: 0.0,
+                    price_change_percentage_24h: 0.0,
+                    high_24h: 0.0,
+                    low_24h: 0.0,
+                    total_volume: 0.0,
                 });
             }
         }
         Ok(data)
     }
-
-    /*     async fn fetch_single_price(&self, symbol: &str) -> Result<f64, PortfolioError> {
-        let exchange = create_exchange(&config.exchanges[0]);
-        let url = format!(
-            //"{}/simple/price?ids={}&vs_currencies=usd&key={}USDT",
-            "{}/api/v3/avgPrice?symbol={}USDT",
-            self.exchange.api_url, symbol
-        );
-        let _ = log_action(&format!("Got here2 {} ", url), None);
-        let resp: serde_json::Value = self
-            .client
-            .get(&url)
-            .header("User-Agent", "crypto_portfolio/0.1")
-            .send()
-            .await
-            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?
-            .json()
-            .await
-            .map_err(|e| PortfolioError::ExchangeError(e.to_string()))?;
-        let price = resp[symbol]["usd"]
-            .as_f64()
-            .ok_or_else(|| PortfolioError::ExchangeError("Price not found".to_string()))?;
-        Ok(price)
-    } */
-
-    pub async fn fetch_market_data_mock(
-        &self,
-        symbols: &[String],
-    ) -> Result<Vec<MarketData>, PortfolioError> {
-        // Mock data for testing
-        Ok(vec![
-            MarketData {
-                symbol: "phala-network".to_string(),
-                price: 0.22,
-                market_cap: 150_000_000.0,
-                price_change_24h: 10.0,
-            },
-            MarketData {
-                symbol: "sui".to_string(),
-                price: 3.10,
-                market_cap: 250_000_000.0,
-                price_change_24h: 3.33,
-            },
-            MarketData {
-                symbol: "dusk-network".to_string(),
-                price: 0.24,
-                market_cap: 100_000_000.0,
-                price_change_24h: -4.0,
-            },
-            MarketData {
-                symbol: "bitcoin".to_string(),
-                price: 118_050.85,
-                market_cap: 2_300_000_000_000.0,
-                price_change_24h: 2.5,
-            },
-            MarketData {
-                symbol: "ethereum".to_string(),
-                price: 3_500.00,
-                market_cap: 420_000_000_000.0,
-                price_change_24h: -1.2,
-            },
-            MarketData {
-                symbol: "solana".to_string(),
-                price: 180.00,
-                market_cap: 80_000_000_000.0,
-                price_change_24h: 5.0,
-            },
-        ])
-    }
 }
 
 pub async fn display_market_screen<'a>(
     market_provider: &MarketProvider<'a>,
-    db: &Database,
     pinned_symbols: &[String],
     sort_by: &str,
     use_colors: bool,
@@ -189,24 +126,22 @@ pub async fn display_market_screen<'a>(
         "Symbol",
         "Price (USD)",
         "Market Cap (USD)",
+        "24h Change (USD)",
         "24h Change (%)",
+        "High (24h)",
+        "Low (24h)",
+        "Total Volume (24h)",
     ]);
     for data in final_data {
-        let change = format!("{:.2}%", data.price_change_24h); // Store as String
-        let change_cell = if use_colors {
-            if data.price_change_24h > 0.0 {
-                Cell::new(&change).fg(Color::Green)
-            } else {
-                Cell::new(&change).fg(Color::Red)
-            }
-        } else {
-            Cell::new(&change)
-        };
         table.add_row(vec![
-            Cell::new(data.symbol),
-            Cell::new(format!("${:.2}", format_number(data.price, None))),
-            Cell::new(format!("${:.0}", format_number(data.market_cap, None))),
-            change_cell,
+            Cell::new(data.symbol.to_uppercase()),
+            Cell::new(format!("${}", format_number(data.price, None))),
+            Cell::new(format!("${}", format_number(data.market_cap, None))),
+            set_cell_color(data.price_change_24h, use_colors, false),
+            set_cell_color(data.price_change_percentage_24h, use_colors, true),
+            Cell::new(format!("{}", format_number(data.high_24h, None))),
+            Cell::new(format!("{}", format_number(data.low_24h, None))),
+            Cell::new(format!("${}", format_number(data.total_volume, None))),
         ]);
     }
 
@@ -218,6 +153,21 @@ pub async fn display_market_screen<'a>(
     Ok(())
 }
 
+fn set_cell_color(amount: f64, use_colors: bool, use_percentage: bool) -> Cell {
+    let percent = if use_percentage { "%" } else { "" };
+    let change = format!("{}{}", format_number(amount, None), percent);
+    let change_cell = if use_colors {
+        if amount > 0.0 {
+            Cell::new(&change).fg(Color::Green)
+        } else {
+            Cell::new(&change).fg(Color::Red)
+        }
+    } else {
+        Cell::new(&change)
+    };
+    change_cell
+}
+
 fn format_number(amount: f64, locale: Option<Locale>) -> String {
     let locale = locale.unwrap_or(locale!("en-US"));
 
@@ -225,6 +175,5 @@ fn format_number(amount: f64, locale: Option<Locale>) -> String {
         .expect("locale should be present");
 
     let decimal = Decimal::from_str(&amount.to_string()).unwrap();
-
     formatter.format(&decimal).to_string()
 }
