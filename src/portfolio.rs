@@ -28,19 +28,19 @@ impl Portfolio {
         Portfolio {
             holdings: vec![
                 Holding {
-                    symbol: "phala-network".to_string(),
+                    symbol: "PHA".to_string(),
                     quantity: 250.0,
                     purchase_price: 0.20,
                     stop_loss: 0.16,
                 },
                 Holding {
-                    symbol: "sui".to_string(),
+                    symbol: "SUI".to_string(),
                     quantity: 10.0,
                     purchase_price: 3.00,
                     stop_loss: 2.40,
                 },
                 Holding {
-                    symbol: "dusk-network".to_string(),
+                    symbol: "DUSK".to_string(),
                     quantity: 80.0,
                     purchase_price: 0.25,
                     stop_loss: 0.20,

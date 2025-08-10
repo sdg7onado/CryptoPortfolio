@@ -108,28 +108,28 @@ impl Notifier {
 
     async fn send_sms(&self, message: &str) -> Result<(), PortfolioError> {
         let truncated_message = message[0..message.len().min(115)].to_string(); // Convert to String
-        let response = self
-            .client
-            .post("https://api.twilio.com/2010-04-01/Accounts")
-            .basic_auth(
-                &self.config.twilio_account_sid,
-                Some(&self.config.twilio_auth_token),
-            )
-            .form(&[
-                ("From", &self.config.twilio_phone_number),
-                ("To", &self.config.recipient_phone_number),
-                ("Body", &truncated_message), // Use String
-            ])
-            .send()
-            .await
-            .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
+                                                                                // let response = self
+                                                                                //     .client
+                                                                                //     .post("https://api.twilio.com/2010-04-01/Accounts")
+                                                                                //     .basic_auth(
+                                                                                //         &self.config.twilio_account_sid,
+                                                                                //         Some(&self.config.twilio_auth_token),
+                                                                                //     )
+                                                                                //     .form(&[
+                                                                                //         ("From", &self.config.twilio_phone_number),
+                                                                                //         ("To", &self.config.recipient_phone_number),
+                                                                                //         ("Body", &truncated_message), // Use String
+                                                                                //     ])
+                                                                                //     .send()
+                                                                                //     .await
+                                                                                //     .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            return Err(PortfolioError::NotificationError(format!(
-                "SMS failed: {}",
-                response.text().await.unwrap_or_default()
-            )));
-        }
+        // if !response.status().is_success() {
+        //     return Err(PortfolioError::NotificationError(format!(
+        //         "SMS failed: {}",
+        //         response.text().await.unwrap_or_default()
+        //     )));
+        // }
         Ok(())
     }
 
@@ -146,21 +146,21 @@ impl Notifier {
             }]
         });
 
-        let response = self
-            .client
-            .post("https://api.sendgrid.com/v3/mail/send")
-            .bearer_auth(&self.config.sendgrid_api_key)
-            .json(&email)
-            .send()
-            .await
-            .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
+        // let response = self
+        //     .client
+        //     .post("https://api.sendgrid.com/v3/mail/send")
+        //     .bearer_auth(&self.config.sendgrid_api_key)
+        //     .json(&email)
+        //     .send()
+        //     .await
+        //     .map_err(|e| PortfolioError::NotificationError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            return Err(PortfolioError::NotificationError(format!(
-                "Email failed: {}",
-                response.text().await.unwrap_or_default()
-            )));
-        }
+        // if !response.status().is_success() {
+        //     return Err(PortfolioError::NotificationError(format!(
+        //         "Email failed: {}",
+        //         response.text().await.unwrap_or_default()
+        //     )));
+        // }
         Ok(())
     }
 }

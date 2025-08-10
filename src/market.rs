@@ -123,6 +123,7 @@ pub async fn display_market_screen<'a>(
 
     let mut table = Table::new();
     table.set_header(vec![
+        "S/N",
         "Symbol",
         "Price (USD)",
         "Market Cap (USD)",
@@ -132,8 +133,9 @@ pub async fn display_market_screen<'a>(
         "Low (24h)",
         "Total Volume (24h)",
     ]);
-    for data in final_data {
+    for (i, data) in final_data.iter().enumerate() {
         table.add_row(vec![
+            Cell::new(i + 1),
             Cell::new(data.symbol.to_uppercase()),
             Cell::new(format!("${}", format_number(data.price, None))),
             Cell::new(format!("${}", format_number(data.market_cap, None))),
