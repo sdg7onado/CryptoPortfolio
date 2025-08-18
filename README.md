@@ -6,9 +6,9 @@
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)
 
-A production-grade Rust application for managing a $100 micro-cap cryptocurrency portfolio (Phala Network, Sui, Dusk Network) with a focus on maximizing returns by January 30, 2026. 
+A production-grade Rust application for managing a $100 micro-cap cryptocurrency portfolio (Phala Network, Sui, Dusk Network) with a focus on maximizing returns by January 30, 2026.
 
-Built with a "10x engineer" mindset, it features three console-based screens for real-time portfolio monitoring, sentiment analysis, and live market updates, complemented by SMS and email notifications for critical events. 
+Built with a "10x engineer" mindset, it features three console-based screens for real-time portfolio monitoring, sentiment analysis, and live market updates, complemented by SMS and email notifications for critical events.
 
 The application is secure, optimized, and runs locally using Redis for caching and PostgreSQL for persistent storage, with an exchange-agnostic design supporting multiple APIs (e.g., CoinGecko, LunarCrush).
 
@@ -70,6 +70,7 @@ graph TD
 ```
 
 ### Key Components
+
 - **Main.rs**: Orchestrates three console screens via separate processes (`portfolio`, `sentiment`, `market`).
 - **Portfolio.rs**: Manages holdings, stop-loss (20%), rebalancing (60% max allocation), and value tracking.
 - **Exchange.rs**: Fetches prices via a trait-based, exchange-agnostic system.
@@ -80,21 +81,23 @@ graph TD
 - **Config.rs**: Parses `config.toml` for environment-specific settings.
 - **Logger.rs**: Logs actions with HMAC-SHA256 signatures in production.
 
-
 ## 📋 Prerequisites
- - **Rust**: Version 1.82 or later (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+
+- **Rust**: Version 1.82 or later (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - **PostgreSQL**: Local installation (`sudo apt install postgresql` on Linux, `brew install postgresql on macOS`)
 - **Redis**: Local installation (`sudo apt install redis` on Linux, `brew install redis on macOS`)
 - **Terminal Emulator** (Linux/macOS): `xterm` (`sudo apt install xterm` or `brew install xterm`)
 - **API Accounts**:
-    - CoinGecko (optional, free tier available)
-    - LunarCrush (for sentiment analysis)
-    - Twilio (for SMS notifications)
-    - SendGrid (for email notifications)
+  - CoinGecko (optional, free tier available)
+  - LunarCrush (for sentiment analysis)
+  - Twilio (for SMS notifications)
+  - SendGrid (for email notifications)
 
 ## 🛠️ Installation
+
 - **Clone the Repository**:
-    ```
+
+    ```bash
     git clone https://github.com/sdg7onado/crypto-portfolio-manager.git
 
     cd crypto-portfolio-manager
@@ -102,13 +105,13 @@ graph TD
 
 - **Install Dependencies**:
 
-    ```
+    ```bash
     cargo build
     ```
 
 - **Set Up Databases**:
     - Start PostgreSQL:
-        ```
+        ```bash
         sudo service postgresql start  # Linux
 
         brew services start postgresql  # macOS
@@ -117,14 +120,14 @@ graph TD
         ```
 
     - **Start Redis**:
-        ```
+        ```bash
         redis-server
         ```
 
 - **Configure Environment**:
-    - Create `.env` in the project root (do not commit):
+  - Create `.env` in the project root (do not commit):
 
-        ```
+        ```config
         SENTIMENT_API_KEY=your_lunarcrush_key
         TWILIO_ACCOUNT_SID=your_twilio_sid
         TWILIO_AUTH_TOKEN=your_twilio_token
@@ -141,7 +144,7 @@ graph TD
 - **Configure Application**:
     - Update `config.toml`:
     
-        ```
+        ```config
         environment = "dev"
 
         [[exchanges]]
@@ -193,9 +196,11 @@ graph TD
         sentiment_change = 0.2
         ```
 
- ## 🚀 Usage
- - **Run in Development Mode**:
-    ```
+## 🚀 Usage
+
+- **Run in Development Mode**:
+
+    ```bash
     RUST_LOG=debug cargo run
     ```
 
@@ -203,31 +208,34 @@ graph TD
     - Frequent updates (`market.refresh_secs = 60`).
     - Verbose logging for debugging.
 
- - **Run in Production Mode**:
-    ```
+- **Run in Production Mode**:
+
+    ```bash
     RUST_LOG=info cargo build --release
     ./target/release/crypto-portfolio-manager
     ```
 
-    - Optimized performance with signed logs.
-    - Longer update intervals (`market.refresh_secs = 300`).
+  - Optimized performance with signed logs.
+  - Longer update intervals (`market.refresh_secs = 300`).
 
- - **Provide Daily Updates**:
-    - Submit price and sentiment data for PHA, SUI, DUSK (e.g., via CoinGecko, LunarCrush).
-    - Example:
-        - PHA: $0.22, sentiment 0.75
-        - SUI: $3.10, sentiment 0.60
-        - DUSK: $0.24, sentiment 0.25
+- **Provide Daily Updates**:
+  - Submit price and sentiment data for PHA, SUI, DUSK (e.g., via CoinGecko, LunarCrush).
+  - Example:
+    - PHA: $0.22, sentiment 0.75
+    - SUI: $3.10, sentiment 0.60
+    - DUSK: $0.24, sentiment 0.25
 
-    - Market data: Top 100 coins by market cap or 24h change.
+  - Market data: Top 100 coins by market cap or 24h change.
 
 - **Monitor Notifications**:
-    - SMS: Short alerts (75–115 characters) for significant actions, portfolio changes, or sentiment shifts.
-    - Email: Detailed HTML reports with timestamps and metrics.
+  - SMS: Short alerts (75–115 characters) for significant actions, portfolio changes, or sentiment shifts.
+  - Email: Detailed HTML reports with timestamps and metrics.
 
- ## 📊 Example Output
- ### Portfolio Status Screen
-```
+## 📊 Example Output
+
+### Portfolio Status Screen
+
+```text
 === Portfolio Status ===
 +----------------+----------+----------------+------------+---------------+-----------+
 | Symbol         | Quantity | Purchase Price | Stop-Loss  | Current Value | Sentiment |
@@ -241,7 +249,8 @@ graph TD
 ```
 
 ### Sentiment Analysis Dashboard
-```
+
+```text
 === Sentiment Analysis Dashboard ===
 Timestamp: 2025-07-31T13:36:00Z
 +----------------+--------------------+--------------+-----------+-----------------+
@@ -254,7 +263,8 @@ Timestamp: 2025-07-31T13:36:00Z
 ```
 
 ### Live Market Updates
-```
+
+```text
 === Live Market Updates ===
 Timestamp: 2025-07-31T13:36:00Z
 +----------------+--------------+-----------------+------------------+
@@ -271,33 +281,40 @@ Timestamp: 2025-07-31T13:36:00Z
 ```
 
 ### 🔔 Notifications
+
 - **SMS (Stop-Loss)**:
-```
+
+```text
 Portfolio Action: dusk-network: Negative sentiment triggered at $0.24 (sentiment: 0.25), sold 80 tokens for $19.20. 2025-07-31T13:36:00Z
 ```
 
 - **Email (Portfolio Value Change)**:
-```
+
+```html
 <h2>Portfolio Value Change Alert</h2>
 <p><strong>Change:</strong> 12.50%</p>
 <p><strong>Previous:</strong> $100.00</p>
 <p><strong>Current:</strong> $112.50</p>
 <p><strong>Timestamp:</strong> 2025-07-31T13:36:00Z</p>
 ```
- ## 🛡️ Security
- - **API Keys**: Stored in `.env`, never committed to version control.
+
+## 🛡️ Security
+
+- **API Keys**: Stored in `.env`, never committed to version control.
 - **Logging**: HMAC-SHA256 signed logs in production (`portfolio_log.txt`) for integrity.
 - **Network**: HTTPS for all API calls (CoinGecko, LunarCrush, Twilio, SendGrid).
 - **Input Validation**: Robust error handling for API responses and database queries.
 - **Notification Throttling**: Cached in Redis to prevent duplicate alerts within 1 hour.
 
 ## ⚡ Performance
+
 - **Caching**: Redis stores prices and sentiment (5-min and 1-hour TTL, respectively).
 - **Async Operations**: tokio for non-blocking I/O in API calls and database queries.
 - **Lightweight**: Optimized with `opt-level = 3`, `lto = "thin"`, and minimal dependencies.
 - **Local Execution**: Runs on localhost, minimizing latency and resource usage.
 
 ## 📈 Workflow
+
 ```mermaid
 
 sequenceDiagram
@@ -333,6 +350,7 @@ sequenceDiagram
 ```
 
 ## 🤝 Contributing
+
 Contributions are welcome! Please follow these steps:
 
 1. Fork the repository.
@@ -342,15 +360,16 @@ Contributions are welcome! Please follow these steps:
 5. Open a pull request.
 
 ## 📜 License
- This project is licensed under the MIT License. See the LICENSE file for details. 
- 
- ## 📬 Contact
- For questions or feedback, open an issue on GitHub or contact the maintainer at okechukwu.agufuobi@hotmail.com (mailto:okechukwu.agufuobi@hotmail.com).
- 
- ## 🎯 Roadmap
- - Add support for additional exchanges (Binance, Kraken).
+
+ This project is licensed under the MIT License. See the LICENSE file for details.
+
+## 📬 Contact
+
+ For questions or feedback, open an issue on GitHub or contact the maintainer at <okechukwu.agufuobi@hotmail.com> (mailto:okechukwu.agufuobi@hotmail.com).
+
+## 🎯 Roadmap
+
+- Add support for additional exchanges (Binance, Kraken).
 - Implement advanced sentiment analysis with local NLP (e.g., TextBlob).
 - Support WebSocket APIs for real-time market updates.
 - Add graphical dashboard option using `ratatui`.
-
-
